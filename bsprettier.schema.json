@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/dreamsocket/bsprettier/bsprettier.schema.json",
+  "title": "bsprettier configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "include": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Glob patterns of files to format."
+    },
+    "ignore": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Glob patterns to exclude."
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": {
+        "enum": ["error", "warn", "info", "off"]
+      },
+      "description": "Per-rule severity settings."
+    },
+    "brs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "blankLinesBetweenRoutines": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Blank lines between consecutive top-level routines."
+        }
+      }
+    },
+    "xml": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "interfaceSectionComments": {
+          "enum": ["preserve"]
+        },
+        "fieldClassificationOverrides": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": { "enum": ["event", "property"] }
+          }
+        }
+      }
+    }
+  }
+}

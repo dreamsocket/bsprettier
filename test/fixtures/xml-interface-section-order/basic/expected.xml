@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="Widget" extends="Group">
+  <interface>
+    <field id="count" type="int" />
+    <field id="title" type="string" />
+    <function name="refresh" />
+  </interface>
+</component>

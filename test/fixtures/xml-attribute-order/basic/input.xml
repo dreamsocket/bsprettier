@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component extends="Group" name="Widget">
+  <children>
+    <Label text="hi" id="title" />
+  </children>
+</component>
