@@ -30,6 +30,8 @@ export interface BscDiagnostic {
 export interface BrsRoutine {
   name: string;
   isSub: boolean;
+  /** The routine name token span. */
+  nameSpan: Span;
   /** The `sub`/`function` keyword token span. */
   keywordSpan: Span;
   /** keyword start .. `end sub`/`end function` end (no surrounding trivia). */
@@ -158,6 +160,9 @@ export function parseBrs(
     const name = nameToken.text;
     const isSub = keyword.kind === "Sub";
     const keywordSpan = rangeToSpan(lineIndex, keyword.location.range);
+    const nameSpan = nameToken.location
+      ? rangeToSpan(lineIndex, nameToken.location.range)
+      : { offset: keywordSpan.offset, length: 0 };
     const declStart = keywordSpan.offset;
     const declEndOffset = endKeyword?.location
       ? lineIndex.positionToOffset(endKeyword.location.range.end)
@@ -177,6 +182,7 @@ export function parseBrs(
     topLevelFunctions.push({
       name,
       isSub,
+      nameSpan,
       keywordSpan,
       declSpan,
       fullSpan,

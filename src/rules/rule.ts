@@ -7,6 +7,8 @@ export interface BaseRuleContext {
   filePath: string;
   source: string;
   config: BsprettierConfig;
+  /** All files currently being formatted, when running in project/CLI mode. */
+  projectSources?: ReadonlyMap<string, string>;
   /** Effective severity for this rule (never "off" — off rules don't run). */
   severity: Severity;
 }

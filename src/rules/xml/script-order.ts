@@ -1,9 +1,9 @@
 import { type XmlElement } from "../../parser/xml.js";
 import {
   attrValue,
-  baseNameNoExt,
-  commentBeforeElement,
-  separatorsHaveComments,
+  computeReorderLayout,
+  reorderLowerBound,
+  reorderUpperBound,
   tagNameEquals,
 } from "../../parser/xml-helpers.js";
 import { asciiCompare } from "../../util/ascii-sort.js";
@@ -22,7 +22,7 @@ export const scriptOrder: XmlRule = {
   lang: "xml",
   phase: 1,
   run(ctx: XmlRuleContext): RuleResult {
-    const { parse, source, filePath } = ctx;
+    const { parse, source } = ctx;
     const root = parse.root;
     if (!root || !tagNameEquals(root, "component")) return emptyResult();
 
@@ -55,61 +55,27 @@ export const scriptOrder: XmlRule = {
       };
     }
 
-    // Refuse if comments sit between scripts, or immediately before the first
-    // script — reordering would re-attach such a comment to the wrong <script>.
-    if (
-      separatorsHaveComments(source, scripts) ||
-      commentBeforeElement(source, root, scripts[0]!)
-    ) {
-      return {
-        edits: [],
-        diagnostics: [
-          {
-            ruleId: RULE_ID,
-            severity: ctx.severity,
-            message:
-              "Comments sit between <script> elements; script order left " +
-              "unchanged to avoid misplacing them.",
-            fixable: false,
-          },
-        ],
-      };
-    }
-
-    const componentName = attrValue(root, "name") ?? "";
-    const fileBase = baseNameNoExt(filePath);
-
+    // Scripts referenced by a bare filename live beside the component XML.
+    // Keep those local includes above path/protocol imports, even when a
+    // library import has the same basename.
+    const isCurrentDirectoryUri = (uri: string): boolean => {
+      return !/^[a-z][a-z0-9+.-]*:/i.test(uri) && !/[\\/]/.test(uri);
+    };
     const isLocal = (s: XmlElement): boolean => {
       const uri = attrValue(s, "uri");
-      if (!uri) return false;
-      const base = baseNameNoExt(uri);
-      return base === componentName || base === fileBase;
+      return uri ? isCurrentDirectoryUri(uri) : false;
     };
 
     const diagnostics: Diagnostic[] = [];
-    const localIndices = scripts
-      .map((s, i) => (isLocal(s) ? i : -1))
-      .filter((i) => i >= 0);
-    if (localIndices.length > 1) {
-      diagnostics.push({
-        ruleId: RULE_ID,
-        severity: ctx.severity,
-        message:
-          "Multiple <script> elements look local to this component; their " +
-          "relative order is preserved.",
-        fixable: false,
-      });
-    }
 
     const order = scripts.map((_, i) => i);
     order.sort((a, b) => {
       const sa = scripts[a]!;
       const sb = scripts[b]!;
-      const aLocal = localIndices.includes(a);
-      const bLocal = localIndices.includes(b);
+      const aLocal = isLocal(sa);
+      const bLocal = isLocal(sb);
       if (aLocal && !bLocal) return -1;
       if (bLocal && !aLocal) return 1;
-      if (aLocal && bLocal) return a - b; // preserve relative order
       const ua = attrValue(sa, "uri") ?? "";
       const ub = attrValue(sb, "uri") ?? "";
       const cmp = asciiCompare(ua, ub);
@@ -120,10 +86,33 @@ export const scriptOrder: XmlRule = {
       return { edits: [], diagnostics };
     }
 
-    const texts = scripts.map((s) => source.slice(s.start, s.end));
+    // A reorder is needed. Attach each leading comment to the <script> below it
+    // so it moves with that script. Refuse only when a comment can't be cleanly
+    // owned (floating/trailing) or is a section header — deferred to later work.
+    const layout = computeReorderLayout(
+      source,
+      scripts,
+      reorderLowerBound(source, root, scripts[0]!),
+      reorderUpperBound(source, root, scripts[scripts.length - 1]!),
+    );
+    if (layout.unsafe || layout.members.some((m) => m.hasLeadingHeader)) {
+      diagnostics.push({
+        ruleId: RULE_ID,
+        severity: ctx.severity,
+        message:
+          "Comments sit between <script> elements; script order left " +
+          "unchanged to avoid misplacing them.",
+        fixable: false,
+      });
+      return { edits: [], diagnostics };
+    }
+
+    const texts = layout.members.map((m) => source.slice(m.ownStart, m.end));
     const separators: string[] = [];
-    for (let i = 1; i < scripts.length; i++) {
-      separators.push(source.slice(scripts[i - 1]!.end, scripts[i]!.start));
+    for (let i = 1; i < layout.members.length; i++) {
+      separators.push(
+        source.slice(layout.members[i - 1]!.end, layout.members[i]!.ownStart),
+      );
     }
 
     let replacement = texts[order[0]!]!;
@@ -131,15 +120,17 @@ export const scriptOrder: XmlRule = {
       replacement += separators[i - 1]! + texts[order[i]!]!;
     }
 
-    const original = source.slice(firstStart, lastEnd);
+    const regionStart = layout.members[0]!.ownStart;
+    const regionEnd = layout.members[layout.members.length - 1]!.end;
+    const original = source.slice(regionStart, regionEnd);
     if (replacement === original) {
       return { edits: [], diagnostics };
     }
 
     const edit: Edit = {
       ruleId: RULE_ID,
-      offset: firstStart,
-      length: lastEnd - firstStart,
+      offset: regionStart,
+      length: regionEnd - regionStart,
       replacement,
     };
     return { edits: [edit], diagnostics };

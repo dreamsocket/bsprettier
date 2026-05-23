@@ -8,7 +8,10 @@ import { interfaceSectionOrder } from "./xml/interface-section-order.js";
 import { noOnchangeField } from "./xml/no-onchange-field.js";
 import { handlerIntent } from "./audit/handler-intent.js";
 import { uiNodePrefix } from "./audit/ui-node-prefix.js";
-import { privateMemberNaming } from "./audit/private-member-naming.js";
+import {
+  privateInterfaceFunctionNaming,
+  privateMemberNaming,
+} from "./audit/private-member-naming.js";
 import { hardcodedString } from "./audit/hardcoded-string.js";
 import { preferDreamsocketUtils } from "./audit/prefer-dreamsocket-utils.js";
 import type { BrsRule, XmlRule } from "./rule.js";
@@ -30,6 +33,7 @@ export const XML_RULES: XmlRule[] = [
   scriptOrder,
   interfaceSectionOrder,
   noOnchangeField,
+  privateInterfaceFunctionNaming,
 ];
 
 export const ALL_RULE_IDS: string[] = [

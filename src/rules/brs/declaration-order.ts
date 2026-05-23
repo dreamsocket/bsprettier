@@ -16,9 +16,32 @@ function sortedRoutines(routines: BrsRoutine[]): BrsRoutine[] {
   });
 }
 
-/** True if `text` contains a BrightScript comment marker. */
-function containsComment(text: string): boolean {
-  return /'/.test(text) || /\bREM\b/i.test(text);
+/** Offset of the start of the line containing `offset` (just after a newline). */
+function lineStart(source: string, offset: number): number {
+  let i = offset;
+  while (i > 0 && source[i - 1] !== "\n") i--;
+  return i;
+}
+
+/**
+ * Offset of the topmost standalone-comment line within `[from, to)`, or -1 if
+ * the gap holds no comment. Used to pull a leading comment (e.g. a section
+ * label) into the block of the routine below it so it travels with that routine
+ * when declarations are reordered.
+ */
+function firstCommentLineStart(source: string, from: number, to: number): number {
+  let i = from;
+  while (i < to) {
+    const ls = lineStart(source, i);
+    let j = ls;
+    while (j < to && (source[j] === " " || source[j] === "\t")) j++;
+    if (source[j] === "'" || /^rem\b/i.test(source.slice(j, j + 4))) return ls;
+    // Advance to the next line.
+    const nl = source.indexOf("\n", i);
+    if (nl < 0 || nl >= to) break;
+    i = nl + 1;
+  }
+  return -1;
 }
 
 export const declarationOrder: BrsRule = {
@@ -73,41 +96,35 @@ export const declarationOrder: BrsRule = {
       };
     }
 
-    // Refuse if standalone (non-banner) comments sit between routines — moving
-    // routines around them would lose or misplace the comments.
-    for (let i = 1; i < routines.length; i++) {
-      const gap = source.slice(
-        routines[i - 1]!.fullSpan.offset + routines[i - 1]!.fullSpan.length,
-        routines[i]!.fullSpan.offset,
-      );
-      if (containsComment(gap)) {
-        return {
-          edits: [],
-          diagnostics: [
-            {
-              ruleId: RULE_ID,
-              severity: ctx.severity,
-              message:
-                "Standalone comments sit between top-level routines; " +
-                "declaration order left unchanged to avoid losing them.",
-              fixable: false,
-            },
-          ],
-        };
-      }
-    }
-
     const desired = sortedRoutines(routines);
     const alreadyOrdered = desired.every((r, i) => r === routines[i]);
     if (alreadyOrdered) return emptyResult();
 
+    // The movable block for each routine is its full span (banner comment +
+    // declaration + trailing same-line comment) extended upward to absorb a
+    // standalone comment that sits above it — a section label or note stays
+    // attached to the routine it precedes and travels with it. The first
+    // routine's block starts at its own span, leaving any file-level header
+    // above it in place.
+    const blockStart = new Map<BrsRoutine, number>();
+    blockStart.set(routines[0]!, routines[0]!.fullSpan.offset);
+    for (let i = 1; i < routines.length; i++) {
+      const prevEnd =
+        routines[i - 1]!.fullSpan.offset + routines[i - 1]!.fullSpan.length;
+      const cur = routines[i]!;
+      const commentStart = firstCommentLineStart(source, prevEnd, cur.fullSpan.offset);
+      blockStart.set(cur, commentStart >= 0 ? commentStart : cur.fullSpan.offset);
+    }
+
     const eol = detectEol(source);
-    const regionStart = routines[0]!.fullSpan.offset;
+    const regionStart = blockStart.get(routines[0]!)!;
     const lastOriginal = routines[routines.length - 1]!;
     const regionEnd = lastOriginal.fullSpan.offset + lastOriginal.fullSpan.length;
 
     const replacement = desired
-      .map((r) => source.slice(r.fullSpan.offset, r.fullSpan.offset + r.fullSpan.length))
+      .map((r) =>
+        source.slice(blockStart.get(r)!, r.fullSpan.offset + r.fullSpan.length),
+      )
       .join(eol + eol);
 
     const edit: Edit = {

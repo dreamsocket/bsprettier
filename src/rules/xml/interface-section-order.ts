@@ -5,8 +5,9 @@ import {
 import { walkElements, type XmlElement } from "../../parser/xml.js";
 import {
   attrValue,
-  commentBeforeElement,
-  separatorsHaveComments,
+  computeReorderLayout,
+  reorderLowerBound,
+  reorderUpperBound,
   tagNameEquals,
 } from "../../parser/xml-helpers.js";
 import { asciiCompare } from "../../util/ascii-sort.js";
@@ -52,28 +53,6 @@ export const interfaceSectionOrder: XmlRule = {
     const children = iface.children;
     if (children.length < 2) return emptyResult();
 
-    // Refuse if comments sit between interface members, or immediately before
-    // the first member — the slot-separator splice would re-attach such a
-    // comment to the wrong member.
-    if (
-      separatorsHaveComments(source, children) ||
-      commentBeforeElement(source, iface, children[0]!)
-    ) {
-      return {
-        edits: [],
-        diagnostics: [
-          {
-            ruleId: RULE_ID,
-            severity: ctx.severity,
-            message:
-              "Comments sit between <interface> members; section order left " +
-              "unchanged to avoid misplacing them.",
-            fixable: false,
-          },
-        ],
-      };
-    }
-
     const componentName = attrValue(parse.root, "name") ?? "";
     const diagnostics: Diagnostic[] = [];
     const rows: Row[] = [];
@@ -94,6 +73,7 @@ export const interfaceSectionOrder: XmlRule = {
           fieldId,
           fieldElement: child,
           config,
+          projectSources: ctx.projectSources,
         });
         if (klass === "ambiguous") {
           ambiguous.push(fieldId);
@@ -139,23 +119,80 @@ export const interfaceSectionOrder: XmlRule = {
       };
     }
 
-    const order = rows.map((_, i) => i);
-    order.sort((a, b) => {
-      const ra = rows[a]!;
-      const rb = rows[b]!;
-      if (ra.section !== rb.section) return ra.section - rb.section;
-      const cmp = asciiCompare(ra.sortKey, rb.sortKey);
-      return cmp !== 0 ? cmp : a - b;
+    // Decide which comments travel with which member. Leading item comments
+    // attach to the member below them; trailing comments to the member they
+    // follow; section-header comments stay put as fixed run boundaries.
+    const layout = computeReorderLayout(
+      source,
+      children,
+      reorderLowerBound(source, iface, children[0]!),
+      reorderUpperBound(source, iface, children[children.length - 1]!),
+    );
+    const refuse = (message: string): RuleResult => ({
+      edits: [],
+      diagnostics: [{ ruleId: RULE_ID, severity: ctx.severity, message, fixable: false }],
     });
 
+    const hasHeaders = layout.members.some((m) => m.hasLeadingHeader);
+    const isFn = (r: Row) => r.section === Section.Functions;
+    let order: number[];
+    if (!hasHeaders) {
+      // No section comments: sort the whole interface into Events → Properties →
+      // Functions, gathering each section together.
+      order = rows.map((_, i) => i);
+      order.sort((a, b) => {
+        const ra = rows[a]!;
+        const rb = rows[b]!;
+        if (ra.section !== rb.section) return ra.section - rb.section;
+        const cmp = asciiCompare(ra.sortKey, rb.sortKey);
+        return cmp !== 0 ? cmp : a - b;
+      });
+    } else {
+      // Section comments present: trust the author's grouping. Each header — and
+      // each <field>↔<function> change — is a fixed run boundary; we never move
+      // a run, only sort members alphabetically within it. This keeps section
+      // labels anchored, preserves the author's Event/Property grouping even
+      // when it disagrees with our classification, and never interleaves fields
+      // with functions.
+      const runs: number[][] = [];
+      for (let i = 0; i < rows.length; i++) {
+        const startsRun =
+          i === 0 ||
+          layout.members[i]!.hasLeadingHeader ||
+          isFn(rows[i]!) !== isFn(rows[i - 1]!);
+        if (startsRun) runs.push([i]);
+        else runs[runs.length - 1]!.push(i);
+      }
+      order = [];
+      for (const run of runs) {
+        const sorted = [...run].sort((a, b) => {
+          const cmp = asciiCompare(rows[a]!.sortKey, rows[b]!.sortKey);
+          return cmp !== 0 ? cmp : a - b;
+        });
+        order.push(...sorted);
+      }
+    }
+
+    // Already correctly ordered: nothing to do.
     if (order.every((v, i) => v === i)) {
       return { edits: [], diagnostics };
     }
 
-    const texts = children.map((c) => source.slice(c.start, c.end));
+    // A reorder is needed. Refuse only if a comment is stranded between members
+    // and can't be carried with one of them.
+    if (layout.unsafe) {
+      return refuse(
+        "A comment is stranded between <interface> members; section order " +
+          "left unchanged to avoid misplacing it.",
+      );
+    }
+
+    const texts = layout.members.map((m) => source.slice(m.ownStart, m.end));
     const separators: string[] = [];
-    for (let i = 1; i < children.length; i++) {
-      separators.push(source.slice(children[i - 1]!.end, children[i]!.start));
+    for (let i = 1; i < layout.members.length; i++) {
+      separators.push(
+        source.slice(layout.members[i - 1]!.end, layout.members[i]!.ownStart),
+      );
     }
 
     let replacement = texts[order[0]!]!;
@@ -163,8 +200,8 @@ export const interfaceSectionOrder: XmlRule = {
       replacement += separators[i - 1]! + texts[order[i]!]!;
     }
 
-    const regionStart = children[0]!.start;
-    const regionEnd = children[children.length - 1]!.end;
+    const regionStart = layout.members[0]!.ownStart;
+    const regionEnd = layout.members[layout.members.length - 1]!.end;
     const original = source.slice(regionStart, regionEnd);
     if (replacement === original) {
       return { edits: [], diagnostics };

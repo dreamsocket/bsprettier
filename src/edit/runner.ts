@@ -24,6 +24,8 @@ export interface FormatOptions {
   filePath: string;
   source: string;
   config: BsprettierConfig;
+  /** All files in the current formatting pass, for cross-file audit rules. */
+  projectSources?: ReadonlyMap<string, string>;
   /** Restrict to these rule ids (still phase-ordered). */
   onlyRules?: Set<string>;
 }
@@ -76,14 +78,14 @@ function unchanged(
 }
 
 export function formatFile(opts: FormatOptions): FormatFileResult {
-  const { filePath, source, config, onlyRules } = opts;
+  const { filePath, source, config, onlyRules, projectSources } = opts;
   const lang = detectLang(filePath);
   if (!lang) {
     return unchanged(filePath, source, []);
   }
   return lang === "brs"
-    ? formatBrs(filePath, source, config, onlyRules)
-    : formatXml(filePath, source, config, onlyRules);
+    ? formatBrs(filePath, source, config, onlyRules, projectSources)
+    : formatXml(filePath, source, config, onlyRules, projectSources);
 }
 
 function formatBrs(
@@ -91,6 +93,7 @@ function formatBrs(
   source: string,
   config: BsprettierConfig,
   onlyRules: Set<string> | undefined,
+  projectSources: ReadonlyMap<string, string> | undefined,
 ): FormatFileResult {
   const active = selectRules<BrsRule>(BRS_RULES, config, onlyRules);
   const initial = parseBrs(source, filePath);
@@ -134,7 +137,14 @@ function formatBrs(
     const phaseEdits: Edit[] = [];
     for (const { rule, severity } of active) {
       if (rule.phase !== phase) continue;
-      const result = rule.run({ filePath, source: current, config, severity, parse });
+      const result = rule.run({
+        filePath,
+        source: current,
+        config,
+        projectSources,
+        severity,
+        parse,
+      });
       for (const e of result.edits) {
         if (isSuppressed(suppression, e.offset, e.ruleId)) continue;
         if (severity === "info") continue;
@@ -195,6 +205,7 @@ function formatXml(
   source: string,
   config: BsprettierConfig,
   onlyRules: Set<string> | undefined,
+  projectSources: ReadonlyMap<string, string> | undefined,
 ): FormatFileResult {
   const active = selectRules<XmlRule>(XML_RULES, config, onlyRules);
   const initial = parseXml(source);
@@ -235,7 +246,14 @@ function formatXml(
     const phaseEdits: Edit[] = [];
     for (const { rule, severity } of active) {
       if (rule.phase !== phase) continue;
-      const result = rule.run({ filePath, source: current, config, severity, parse });
+      const result = rule.run({
+        filePath,
+        source: current,
+        config,
+        projectSources,
+        severity,
+        parse,
+      });
       for (const e of result.edits) {
         if (isSuppressed(suppression, e.offset, e.ruleId)) continue;
         if (severity === "info") continue;

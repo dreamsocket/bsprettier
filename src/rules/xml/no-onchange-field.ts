@@ -5,6 +5,7 @@ import {
   type Diagnostic,
   type RuleResult,
 } from "../../edit/types.js";
+import { setterHandlerName } from "../../util/observer-handler.js";
 import type { XmlRule, XmlRuleContext } from "../rule.js";
 
 const RULE_ID = "xml/no-onchange-field";
@@ -25,12 +26,13 @@ export const noOnchangeField: XmlRule = {
       );
       if (!onChange) continue;
       const fieldId = attrValue(el, "id") ?? "(unknown)";
+      const handler = setterHandlerName(fieldId);
       diagnostics.push({
         ruleId: RULE_ID,
         severity: ctx.severity,
         message:
-          `<field id="${fieldId}"> uses onChange; prefer observeFieldScoped ` +
-          "in init() for clearer lifecycle control.",
+          `<field id="${fieldId}"> uses onChange; remove the attribute and ` +
+          `add m.top.observeFieldScoped("${fieldId}", "${handler}") in init().`,
         span: { offset: onChange.start, length: onChange.end - onChange.start },
         fixable: false,
       });

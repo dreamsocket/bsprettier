@@ -1,14 +1,20 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import fastGlob from "fast-glob";
 import ignoreFactory from "ignore";
 import pc from "picocolors";
-import { loadConfig, DEFAULT_IGNORE, type BsprettierConfig } from "./config.js";
+import {
+  loadConfig,
+  DEFAULT_IGNORE,
+  ruleSetting,
+  type BsprettierConfig,
+} from "./config.js";
 import { ALL_RULE_IDS } from "./rules/registry.js";
 import {
   formatFile,
   type FormatFileResult,
 } from "./edit/runner.js";
+import { migrateOnChangeObservers } from "./edit/onchange-migration.js";
 
 interface CliArgs {
   globs: string[];
@@ -130,10 +136,34 @@ function discoverFiles(
     const ig = ignoreFactory().add(readFileSync(gitignorePath, "utf8"));
     return entries.filter((abs) => {
       const rel = relative(cwd, abs);
+      if (rel.startsWith("..") || isAbsolute(rel)) return true;
       return rel.length > 0 && !ig.ignores(rel);
     });
   }
   return entries;
+}
+
+function addRuleIds(
+  ruleIdsByFile: Map<string, Set<string>>,
+  filePath: string,
+  ruleIds: string[],
+): void {
+  if (ruleIds.length === 0) return;
+  let existing = ruleIdsByFile.get(filePath);
+  if (!existing) {
+    existing = new Set<string>();
+    ruleIdsByFile.set(filePath, existing);
+  }
+  for (const ruleId of ruleIds) existing.add(ruleId);
+}
+
+function shouldRunOnChangeMigration(
+  config: BsprettierConfig,
+  onlyRules: Set<string> | undefined,
+): boolean {
+  if (onlyRules && !onlyRules.has("xml/no-onchange-field")) return false;
+  const setting = ruleSetting(config, "xml/no-onchange-field");
+  return setting !== "off" && setting !== "info";
 }
 
 export async function main(argv: string[]): Promise<number> {
@@ -188,24 +218,39 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   let hadError = false;
-  let changedCount = 0;
-  const changedFiles: FormatFileResult[] = [];
+  const initialSources = new Map<string, string>();
+  const erroredFiles = new Set<string>();
 
   for (const filePath of files) {
-    let source: string;
     try {
-      source = readFileSync(filePath, "utf8");
+      initialSources.set(filePath, readFileSync(filePath, "utf8"));
     } catch (err) {
       process.stderr.write(
         `${pc.red("error")}: cannot read ${filePath}: ${String(err)}\n`,
       );
       hadError = true;
-      continue;
+      erroredFiles.add(filePath);
     }
+  }
+
+  const migration = shouldRunOnChangeMigration(config, args.rules)
+    ? migrateOnChangeObservers(initialSources)
+    : {
+        sources: new Map(initialSources),
+        changedRuleIdsByFile: new Map<string, Set<string>>(),
+      };
+  const currentSources = migration.sources;
+  const changedRuleIdsByFile = migration.changedRuleIdsByFile;
+  const changedFiles: FormatFileResult[] = [];
+
+  for (const filePath of files) {
+    const source = currentSources.get(filePath);
+    if (source === undefined) continue;
     const result = formatFile({
       filePath,
       source,
       config,
+      projectSources: currentSources,
       onlyRules: args.rules,
     });
 
@@ -226,24 +271,46 @@ export async function main(argv: string[]): Promise<number> {
         `${pc.red("error")} ${relative(cwd, filePath)}: ${result.errorMessage ?? result.status}\n`,
       );
       hadError = true;
+      erroredFiles.add(filePath);
       continue;
     }
 
     if (result.changed) {
-      changedCount++;
-      changedFiles.push(result);
-      if (args.mode === "write") {
-        try {
-          writeFileSync(filePath, result.output, "utf8");
-        } catch (err) {
-          process.stderr.write(
-            `${pc.red("error")}: cannot write ${filePath}: ${String(err)}\n`,
-          );
-          hadError = true;
-        }
+      currentSources.set(filePath, result.output);
+      addRuleIds(changedRuleIdsByFile, filePath, result.ruleIds);
+    }
+  }
+
+  for (const filePath of files) {
+    if (erroredFiles.has(filePath)) continue;
+    const initial = initialSources.get(filePath);
+    const current = currentSources.get(filePath);
+    if (initial === undefined || current === undefined || current === initial) {
+      continue;
+    }
+    const ruleIds = [...(changedRuleIdsByFile.get(filePath) ?? [])].sort();
+    changedFiles.push({
+      filePath,
+      status: "changed",
+      output: current,
+      changed: true,
+      diagnostics: [],
+      ruleIds,
+    });
+
+    if (args.mode === "write") {
+      try {
+        writeFileSync(filePath, current, "utf8");
+      } catch (err) {
+        process.stderr.write(
+          `${pc.red("error")}: cannot write ${filePath}: ${String(err)}\n`,
+        );
+        hadError = true;
       }
     }
   }
+
+  const changedCount = changedFiles.length;
 
   // Reporting.
   if (args.mode === "write") {
