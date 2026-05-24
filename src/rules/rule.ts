@@ -2,6 +2,7 @@ import type { BsprettierConfig } from "../config.js";
 import type { RuleResult, Severity } from "../edit/types.js";
 import type { BrsParseResult } from "../parser/brighterscript-adapter.js";
 import type { XmlParseResult } from "../parser/xml.js";
+import type { ProjectContext } from "../project/context.js";
 
 export interface BaseRuleContext {
   filePath: string;
@@ -9,6 +10,8 @@ export interface BaseRuleContext {
   config: BsprettierConfig;
   /** All files currently being formatted, when running in project/CLI mode. */
   projectSources?: ReadonlyMap<string, string>;
+  /** Cached project lookups derived from projectSources. */
+  projectContext?: ProjectContext;
   /** Effective severity for this rule (never "off" — off rules don't run). */
   severity: Severity;
 }

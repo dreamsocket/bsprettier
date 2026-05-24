@@ -2,6 +2,7 @@ import { Formatter } from "brighterscript-formatter";
 import { ruleSetting, type BsprettierConfig } from "../config.js";
 import { parseBrs } from "../parser/brighterscript-adapter.js";
 import { parseXml } from "../parser/xml.js";
+import { getProjectContext, type ProjectContext } from "../project/context.js";
 import { BRS_RULES, XML_RULES } from "../rules/registry.js";
 import type { BrsRule, XmlRule } from "../rules/rule.js";
 import { applyEdits, findConflict, isNoOpEdit } from "./apply.js";
@@ -27,6 +28,8 @@ export interface FormatOptions {
   config: BsprettierConfig;
   /** All files in the current formatting pass, for cross-file audit rules. */
   projectSources?: ReadonlyMap<string, string>;
+  /** Cached project lookups derived from projectSources. */
+  projectContext?: ProjectContext;
   /** Restrict to these rule ids (still phase-ordered). */
   onlyRules?: Set<string>;
 }
@@ -127,13 +130,16 @@ function unchanged(
 
 export function formatFile(opts: FormatOptions): FormatFileResult {
   const { filePath, source, config, onlyRules, projectSources } = opts;
+  const projectContext =
+    opts.projectContext ??
+    (projectSources ? getProjectContext(projectSources) : undefined);
   const lang = detectLang(filePath);
   if (!lang) {
     return unchanged(filePath, source, []);
   }
   return lang === "brs"
-    ? formatBrs(filePath, source, config, onlyRules, projectSources)
-    : formatXml(filePath, source, config, onlyRules, projectSources);
+    ? formatBrs(filePath, source, config, onlyRules, projectSources, projectContext)
+    : formatXml(filePath, source, config, onlyRules, projectSources, projectContext);
 }
 
 function formatBrs(
@@ -142,6 +148,7 @@ function formatBrs(
   config: BsprettierConfig,
   onlyRules: Set<string> | undefined,
   projectSources: ReadonlyMap<string, string> | undefined,
+  projectContext: ProjectContext | undefined,
 ): FormatFileResult {
   const active = selectRules<BrsRule>(BRS_RULES, config, onlyRules);
   const diagnostics: Diagnostic[] = [];
@@ -235,6 +242,7 @@ function formatBrs(
         source: current,
         config,
         projectSources,
+        projectContext,
         severity,
         parse,
       });
@@ -314,6 +322,7 @@ function formatXml(
   config: BsprettierConfig,
   onlyRules: Set<string> | undefined,
   projectSources: ReadonlyMap<string, string> | undefined,
+  projectContext: ProjectContext | undefined,
 ): FormatFileResult {
   const active = selectRules<XmlRule>(XML_RULES, config, onlyRules);
   const initial = parseXml(source);
@@ -360,6 +369,7 @@ function formatXml(
         source: current,
         config,
         projectSources,
+        projectContext,
         severity,
         parse,
       });

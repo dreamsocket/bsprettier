@@ -15,6 +15,7 @@ import {
   type FormatFileResult,
 } from "./edit/runner.js";
 import { migrateOnChangeObservers } from "./edit/onchange-migration.js";
+import { getProjectContext } from "./project/context.js";
 
 interface CliArgs {
   globs: string[];
@@ -367,6 +368,7 @@ export async function main(argv: string[]): Promise<number> {
   if (runsMigration) progress.tick("migrated onChange observers");
   const currentSources = migration.sources;
   const formatProjectSources = new Map(currentSources);
+  const formatProjectContext = getProjectContext(formatProjectSources);
   const changedRuleIdsByFile = migration.changedRuleIdsByFile;
   const changedFiles: FormatFileResult[] = [];
 
@@ -381,6 +383,7 @@ export async function main(argv: string[]): Promise<number> {
       source,
       config,
       projectSources: formatProjectSources,
+      projectContext: formatProjectContext,
       onlyRules: args.rules,
     });
 

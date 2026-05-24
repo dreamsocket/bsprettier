@@ -75,6 +75,7 @@ export const interfaceSectionOrder: XmlRule = {
           fieldElement: child,
           config,
           projectSources: ctx.projectSources,
+          projectContext: ctx.projectContext,
         });
         if (klass === "ambiguous") {
           ambiguous.push(fieldId);

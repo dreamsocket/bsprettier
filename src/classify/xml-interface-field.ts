@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import type { BsprettierConfig } from "../config.js";
 import { attrValue, baseNameNoExt } from "../parser/xml-helpers.js";
 import type { XmlElement } from "../parser/xml.js";
+import type { ProjectContext } from "../project/context.js";
 
 export type FieldClass = "event" | "property" | "ambiguous";
 
@@ -14,6 +15,8 @@ export interface FieldClassificationInput {
   config: BsprettierConfig;
   /** In-memory sources from the current formatting pass, when available. */
   projectSources?: ReadonlyMap<string, string>;
+  /** Cached project lookups derived from projectSources. */
+  projectContext?: ProjectContext;
 }
 
 function normPath(p: string): string {
@@ -244,8 +247,15 @@ function classifyUsage(brs: string, fieldId: string): Usage {
  * which a `fieldClassificationOverrides` entry resolves.
  */
 export function classifyField(input: FieldClassificationInput): FieldClass {
-  const { config, filePath, componentName, fieldId, fieldElement, projectSources } =
-    input;
+  const {
+    config,
+    filePath,
+    componentName,
+    fieldId,
+    fieldElement,
+    projectSources,
+    projectContext,
+  } = input;
 
   const override = configOverride(config, filePath, fieldId);
   if (override) return override;
@@ -258,7 +268,9 @@ export function classifyField(input: FieldClassificationInput): FieldClass {
   const standaloneParticiple =
     words.length === 1 && STATE_PARTICIPLES.has(lastWord);
 
-  const brs = resolveLinkedBrs(filePath, componentName, projectSources);
+  const brs =
+    projectContext?.linkedBrsForXml(filePath) ??
+    resolveLinkedBrs(filePath, componentName, projectSources);
   const usage = brs
     ? classifyUsage(brs, fieldId)
     : { read: false, write: false };

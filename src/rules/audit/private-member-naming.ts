@@ -1,217 +1,13 @@
-import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { Lexer } from "brighterscript/dist/lexer/Lexer.js";
 import { emptyResult, type RuleResult } from "../../edit/types.js";
 import type { Edit } from "../../edit/types.js";
-import { parseXml, walkElements } from "../../parser/xml.js";
-import { parseBrs } from "../../parser/brighterscript-adapter.js";
+import { walkElements } from "../../parser/xml.js";
 import type { BscToken, BrsRoutine } from "../../parser/brighterscript-adapter.js";
 import { attrValue, tagNameEquals } from "../../parser/xml-helpers.js";
 import { scan } from "./scan.js";
 import type { BrsRule, BrsRuleContext, XmlRule, XmlRuleContext } from "../rule.js";
 
 const RULE_ID = "audit/private-member-naming";
-
-function baseNameNoExt(filePath: string): string {
-  const file = basename(filePath);
-  const dot = file.lastIndexOf(".");
-  return dot > 0 ? file.slice(0, dot) : file;
-}
-
-function absolutePath(filePath: string): string {
-  return isAbsolute(filePath) ? filePath : resolve(filePath);
-}
-
-function packageRootFor(filePath: string): string | null {
-  const normalized = filePath.replaceAll("\\", "/");
-  for (const segment of ["/components/", "/source/"]) {
-    const idx = normalized.lastIndexOf(segment);
-    if (idx >= 0) return filePath.slice(0, idx);
-  }
-  return null;
-}
-
-function resolveUri(xmlPath: string, uri: string): string | null {
-  if (/^[a-z][a-z0-9+.-]*:/i.test(uri) && !uri.toLowerCase().startsWith("pkg:/")) {
-    return null;
-  }
-  if (uri.toLowerCase().startsWith("pkg:/")) {
-    const root = packageRootFor(xmlPath);
-    if (!root) return null;
-    return resolve(root, uri.slice("pkg:/".length));
-  }
-  return resolve(dirname(xmlPath), uri);
-}
-
-function componentReferencesBrs(
-  xmlPath: string,
-  xmlSource: string,
-  brsPath: string,
-): boolean {
-  const parse = parseXml(xmlSource);
-  if (parse.fatal || !parse.root) return false;
-
-  let hasScript = false;
-  for (const el of walkElements(parse.root)) {
-    if (!tagNameEquals(el, "script")) continue;
-    hasScript = true;
-    const uri = attrValue(el, "uri");
-    if (!uri) continue;
-    const target = resolveUri(xmlPath, uri);
-    if (!target || !/\.(brs|bs)$/i.test(target)) continue;
-    if (absolutePath(target) === brsPath) return true;
-  }
-
-  if (hasScript) return false;
-  const sibling = resolve(dirname(xmlPath), `${baseNameNoExt(xmlPath)}.brs`);
-  return absolutePath(sibling) === brsPath;
-}
-
-/**
- * Absolute paths of every component-local script a component links — the
- * `.brs`/`.bs` files it references that live in the same directory as its XML.
- * These form the component's script scope: routines declared in any of them are
- * callable from all the others, so a rename in one must be reflected as a
- * call-site update in the rest. Shared utilities linked from another directory
- * (pkg:/.../utils, ../common) are excluded — they are not component-private.
- */
-function collectScopeScripts(xmlPath: string, xmlSource: string): string[] {
-  const parse = parseXml(xmlSource);
-  if (parse.fatal || !parse.root) return [];
-  const dir = dirname(xmlPath);
-  const out: string[] = [];
-  let hasScript = false;
-  for (const el of walkElements(parse.root)) {
-    if (!tagNameEquals(el, "script")) continue;
-    hasScript = true;
-    const uri = attrValue(el, "uri");
-    if (!uri) continue;
-    const target = resolveUri(xmlPath, uri);
-    if (!target || !/\.(brs|bs)$/i.test(target)) continue;
-    const abs = absolutePath(target);
-    if (dirname(abs) === dir) out.push(abs);
-  }
-  if (!hasScript) {
-    out.push(absolutePath(resolve(dir, `${baseNameNoExt(xmlPath)}.brs`)));
-  }
-  return out;
-}
-
-interface ComponentInfo {
-  name: string;
-  extendsName: string | null;
-  publicNames: Set<string>;
-}
-
-function parseComponentInfo(xmlSource: string): ComponentInfo | null {
-  const parse = parseXml(xmlSource);
-  if (parse.fatal || !parse.root) return null;
-
-  const name = attrValue(parse.root, "name");
-  if (!name) return null;
-  return {
-    name,
-    extendsName: attrValue(parse.root, "extends") ?? null,
-    publicNames: collectOwnInterfaceFunctions(xmlSource),
-  };
-}
-
-function collectOwnInterfaceFunctions(xmlSource: string): Set<string> {
-  const parse = parseXml(xmlSource);
-  const names = new Set<string>();
-  if (parse.fatal || !parse.root) return names;
-
-  for (const el of walkElements(parse.root)) {
-    if (!tagNameEquals(el, "interface")) continue;
-    for (const child of el.children) {
-      if (!tagNameEquals(child, "function")) continue;
-      const name = attrValue(child, "name");
-      if (name) names.add(publicRoutineKey(name));
-    }
-  }
-  return names;
-}
-
-function componentIndex(
-  sources: ReadonlyMap<string, string>,
-): Map<string, ComponentInfo> {
-  const index = new Map<string, ComponentInfo>();
-  for (const [filePath, source] of sources) {
-    if (!/\.xml$/i.test(filePath)) continue;
-    const info = parseComponentInfo(source);
-    if (!info) continue;
-    index.set(info.name.toLowerCase(), info);
-  }
-  return index;
-}
-
-function collectInterfaceFunctions(
-  xmlSource: string,
-  index: Map<string, ComponentInfo>,
-): Set<string> {
-  const names = new Set<string>();
-  const seen = new Set<string>();
-  let info = parseComponentInfo(xmlSource);
-
-  while (info) {
-    const key = info.name.toLowerCase();
-    if (seen.has(key)) break;
-    seen.add(key);
-
-    for (const name of info.publicNames) names.add(name);
-    if (!info.extendsName) break;
-    info = index.get(info.extendsName.toLowerCase()) ?? null;
-  }
-
-  return names;
-}
-
-function publicInterfaceInfo(ctx: BrsRuleContext): {
-  publicNames: Set<string>;
-  requiresPrivatePrefixes: boolean;
-  /** Other component-local scripts in this file's scope: abs path → source. */
-  scopeSources: Map<string, string>;
-} | null {
-  const sources = ctx.projectSources;
-  if (!sources) return null;
-
-  const brsPath = absolutePath(ctx.filePath);
-  const sourceByAbs = new Map<string, string>();
-  for (const [filePath, source] of sources) {
-    if (/\.(brs|bs)$/i.test(filePath)) sourceByAbs.set(absolutePath(filePath), source);
-  }
-
-  const names = new Set<string>();
-  let foundComponent = false;
-  let requiresPrivatePrefixes = false;
-  const scopeSources = new Map<string, string>();
-  const components = componentIndex(sources);
-  for (const [filePath, source] of sources) {
-    if (!/\.xml$/i.test(filePath)) continue;
-    const xmlPath = absolutePath(filePath);
-    if (!componentReferencesBrs(xmlPath, source, brsPath)) continue;
-    foundComponent = true;
-    // Any script the component links that lives in the same directory is a
-    // component-local script (e.g. LIVEPlayer.brs, LIVEPlayercallbacks.brs,
-    // LIVEPlayertracking.brs all next to LIVEPlayer.xml), so its routines must
-    // be private unless declared in the interface. Only shared utilities
-    // referenced from another directory (pkg:/.../utils, ../common) keep public
-    // helper names.
-    if (dirname(xmlPath) === dirname(brsPath)) requiresPrivatePrefixes = true;
-    for (const name of collectInterfaceFunctions(source, components)) {
-      names.add(name);
-    }
-    // Gather sibling scripts in the same scope so call sites in THIS file that
-    // target a now-private sibling routine are rewritten in the same pass.
-    for (const scriptPath of collectScopeScripts(xmlPath, source)) {
-      if (scriptPath === brsPath) continue;
-      const siblingSource = sourceByAbs.get(scriptPath);
-      if (siblingSource !== undefined) scopeSources.set(scriptPath, siblingSource);
-    }
-  }
-  return foundComponent
-    ? { publicNames: names, requiresPrivatePrefixes, scopeSources }
-    : null;
-}
 
 function isFrameworkRoutine(name: string): boolean {
   const lower = name.toLowerCase();
@@ -548,7 +344,7 @@ export const privateMemberNaming: BrsRule = {
     );
     const memberEdits = memberRenameEdits(ctx, memberRenames.renames);
 
-    const interfaceInfo = publicInterfaceInfo(ctx);
+    const interfaceInfo = ctx.projectContext?.publicInterfaceInfo(ctx.filePath) ?? null;
     if (!interfaceInfo) {
       if (diagnostics.length === 0 && memberEdits.length === 0) {
         return emptyResult();
@@ -608,9 +404,9 @@ export const privateMemberNaming: BrsRule = {
     // each sibling's rename decision onto this file's call sites by computing the
     // same map the sibling would, from the shared project snapshot.
     const scopeRenames = new Map(renames);
-    for (const [scriptPath, scriptSource] of interfaceInfo.scopeSources) {
-      const parsed = parseBrs(scriptSource, scriptPath);
-      if (parsed.fatal) continue;
+    for (const [scriptPath] of interfaceInfo.scopeSources) {
+      const parsed = ctx.projectContext?.getBrsParse(scriptPath);
+      if (!parsed || parsed.fatal) continue;
       for (const [from, to] of computeRenamesForRoutines(
         parsed.topLevelFunctions,
         publicNames,

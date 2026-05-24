@@ -172,7 +172,7 @@ Discovered via cosmiconfig: `bsprettier.config.json`, `.bsprettierrc.json`,
   "xml": {
     "interfaceSectionComments": "preserve",
     "fieldClassificationOverrides": {
-      "components/nbc/app/content/Foo.xml": {
+      "components/app/content/Foo.xml": {
         "dismissClicked": "event",
         "data": "property"
       }

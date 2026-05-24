@@ -1,4 +1,3 @@
-import { basename, dirname, isAbsolute, resolve } from "node:path";
 import { Lexer } from "brighterscript/dist/lexer/Lexer.js";
 import {
   emptyResult,
@@ -6,112 +5,15 @@ import {
   type Edit,
   type RuleResult,
 } from "../../edit/types.js";
-import { parseXml, walkElements } from "../../parser/xml.js";
 import type { BscToken } from "../../parser/brighterscript-adapter.js";
-import { attrValue, tagNameEquals } from "../../parser/xml-helpers.js";
+import { absolutePath } from "../../project/context.js";
 import { diag, scan } from "./scan.js";
 import type { BrsRule, BrsRuleContext } from "../rule.js";
 
 const RULE_ID = "audit/ui-node-prefix";
 
-function baseNameNoExt(filePath: string): string {
-  const file = basename(filePath);
-  const dot = file.lastIndexOf(".");
-  return dot > 0 ? file.slice(0, dot) : file;
-}
-
-function absolutePath(filePath: string): string {
-  return isAbsolute(filePath) ? filePath : resolve(filePath);
-}
-
-function packageRootFor(filePath: string): string | null {
-  const normalized = filePath.replaceAll("\\", "/");
-  for (const segment of ["/components/", "/source/"]) {
-    const idx = normalized.lastIndexOf(segment);
-    if (idx >= 0) return filePath.slice(0, idx);
-  }
-  return null;
-}
-
-function resolveUri(xmlPath: string, uri: string): string | null {
-  if (
-    /^[a-z][a-z0-9+.-]*:/i.test(uri) &&
-    !uri.toLowerCase().startsWith("pkg:/")
-  ) {
-    return null;
-  }
-  if (uri.toLowerCase().startsWith("pkg:/")) {
-    const root = packageRootFor(xmlPath);
-    if (!root) return null;
-    return resolve(root, uri.slice("pkg:/".length));
-  }
-  return resolve(dirname(xmlPath), uri);
-}
-
-function mainSceneReferencesFile(
-  xmlPath: string,
-  xmlSource: string,
-  brsPath: string,
-): boolean {
-  const parse = parseXml(xmlSource);
-  if (parse.fatal || !parse.root) return false;
-  if (attrValue(parse.root, "name")?.toLowerCase() !== "mainscene") {
-    return false;
-  }
-
-  let hasScript = false;
-  for (const el of walkElements(parse.root)) {
-    if (!tagNameEquals(el, "script")) continue;
-    hasScript = true;
-    const uri = attrValue(el, "uri");
-    if (!uri) continue;
-    const target = resolveUri(xmlPath, uri);
-    if (!target || !/\.(brs|bs)$/i.test(target)) continue;
-    if (absolutePath(target) === brsPath) return true;
-  }
-
-  if (hasScript) return false;
-  const sibling = resolve(dirname(xmlPath), `${baseNameNoExt(xmlPath)}.brs`);
-  return absolutePath(sibling) === brsPath;
-}
-
-function componentReferencesFile(
-  xmlPath: string,
-  xmlSource: string,
-  brsPath: string,
-): boolean {
-  const parse = parseXml(xmlSource);
-  if (parse.fatal || !parse.root) return false;
-
-  let hasScript = false;
-  for (const el of walkElements(parse.root)) {
-    if (!tagNameEquals(el, "script")) continue;
-    hasScript = true;
-    const uri = attrValue(el, "uri");
-    if (!uri) continue;
-    const target = resolveUri(xmlPath, uri);
-    if (!target || !/\.(brs|bs)$/i.test(target)) continue;
-    if (absolutePath(target) === brsPath) return true;
-  }
-
-  if (hasScript) return false;
-  const sibling = resolve(dirname(xmlPath), `${baseNameNoExt(xmlPath)}.brs`);
-  return absolutePath(sibling) === brsPath;
-}
-
-function isMainSceneScript(ctx: BrsRuleContext): boolean {
-  if (baseNameNoExt(ctx.filePath).toLowerCase() === "mainscene") return true;
-  const sources = ctx.projectSources;
-  if (!sources) return false;
-
-  const brsPath = absolutePath(ctx.filePath);
-  for (const [filePath, source] of sources) {
-    if (!/\.xml$/i.test(filePath)) continue;
-    if (mainSceneReferencesFile(absolutePath(filePath), source, brsPath)) {
-      return true;
-    }
-  }
-  return false;
+function isSceneScript(ctx: BrsRuleContext): boolean {
+  return ctx.projectContext?.isSceneScript(ctx.filePath) ?? false;
 }
 
 function isSceneFindNodeReceiver(receiver: string): boolean {
@@ -143,31 +45,8 @@ function sceneVariableNames(source: string): Set<string> {
   return names;
 }
 
-function isAnimationOrInterpolatorTag(name: string): boolean {
-  const lower = name.toLowerCase();
-  return lower.endsWith("animation") || lower.endsWith("interpolator");
-}
-
 function animationOrInterpolatorIds(ctx: BrsRuleContext): Set<string> {
-  const sources = ctx.projectSources;
-  if (!sources) return new Set();
-
-  const ids = new Set<string>();
-  const brsPath = absolutePath(ctx.filePath);
-  for (const [filePath, source] of sources) {
-    if (!/\.xml$/i.test(filePath)) continue;
-    const xmlPath = absolutePath(filePath);
-    if (!componentReferencesFile(xmlPath, source, brsPath)) continue;
-
-    const parse = parseXml(source);
-    if (parse.fatal || !parse.root) continue;
-    for (const el of walkElements(parse.root)) {
-      if (!isAnimationOrInterpolatorTag(el.name)) continue;
-      const id = attrValue(el, "id");
-      if (id) ids.add(id);
-    }
-  }
-  return ids;
+  return ctx.projectContext?.animationOrInterpolatorIds(ctx.filePath) ?? new Set();
 }
 
 function literalFindNodeId(rawArg: string): string | null {
@@ -177,63 +56,15 @@ function literalFindNodeId(rawArg: string): string | null {
 }
 
 /**
- * Absolute paths of every component-local script a component links — the
- * `.brs`/`.bs` files it references that live in the same directory as its XML.
- * These share the component instance's `m`, so a UI handle assigned in one is
- * read from the others; a rename must reach all of them.
- */
-function collectScopeScripts(xmlPath: string, xmlSource: string): string[] {
-  const parse = parseXml(xmlSource);
-  if (parse.fatal || !parse.root) return [];
-  const dir = dirname(xmlPath);
-  const out: string[] = [];
-  let hasScript = false;
-  for (const el of walkElements(parse.root)) {
-    if (!tagNameEquals(el, "script")) continue;
-    hasScript = true;
-    const uri = attrValue(el, "uri");
-    if (!uri) continue;
-    const target = resolveUri(xmlPath, uri);
-    if (!target || !/\.(brs|bs)$/i.test(target)) continue;
-    const abs = absolutePath(target);
-    if (dirname(abs) === dir) out.push(abs);
-  }
-  if (!hasScript) {
-    out.push(absolutePath(resolve(dir, `${baseNameNoExt(xmlPath)}.brs`)));
-  }
-  return out;
-}
-
-/**
  * The component-local script scope for the current file: every sibling script in
  * the same directory as a component that links it, plus the file itself, keyed by
  * absolute path. Falls back to just the current file when no component references
  * it (a standalone script still owns its own `m`).
  */
 function gatherScopeSources(ctx: BrsRuleContext): Map<string, string> {
-  const brsPath = absolutePath(ctx.filePath);
-  const scope = new Map<string, string>();
-  scope.set(brsPath, ctx.source);
-
-  const sources = ctx.projectSources;
-  if (!sources) return scope;
-  const sourceByAbs = new Map<string, string>();
-  for (const [filePath, source] of sources) {
-    if (/\.(brs|bs)$/i.test(filePath)) {
-      sourceByAbs.set(absolutePath(filePath), source);
-    }
-  }
-  for (const [filePath, source] of sources) {
-    if (!/\.xml$/i.test(filePath)) continue;
-    const xmlPath = absolutePath(filePath);
-    if (!componentReferencesFile(xmlPath, source, brsPath)) continue;
-    for (const scriptPath of collectScopeScripts(xmlPath, source)) {
-      if (scriptPath === brsPath) continue;
-      const s = sourceByAbs.get(scriptPath);
-      if (s !== undefined) scope.set(scriptPath, s);
-    }
-  }
-  return scope;
+  const scope = ctx.projectContext?.scopeSources(ctx.filePath) ?? new Map();
+  scope.set(absolutePath(ctx.filePath), ctx.source);
+  return scope.size > 0 ? scope : new Map([[ctx.filePath, ctx.source]]);
 }
 
 /** `tileGroup` → `_uiTileGroup`; `_sleEndScreen` → `_uiSleEndScreen`. */
@@ -349,7 +180,8 @@ function memberRenameEdits(
 
 /**
  * UI node references obtained via `findNode` should be stored on members named
- * `m._ui*`, except for MainScene-level references and scene-level `findNode`
+ * `m._ui*`, except for scripts linked from components that extend `Scene` and
+ * scene-level `findNode`
  * calls. Scene-level receivers include the literal scene object
  * (`scene`, `m.scene`, `m.top.getScene()`) and any local variable assigned from
  * `getScene()` (e.g. `_scene = m.top.getScene()` then `_scene.findNode(...)`).
@@ -368,7 +200,7 @@ export const uiNodePrefix: BrsRule = {
   lang: "brs",
   phase: 4,
   run(ctx: BrsRuleContext): RuleResult {
-    if (isMainSceneScript(ctx)) return emptyResult();
+    if (isSceneScript(ctx)) return emptyResult();
 
     const animationIds = animationOrInterpolatorIds(ctx);
     const scopeSources = gatherScopeSources(ctx);

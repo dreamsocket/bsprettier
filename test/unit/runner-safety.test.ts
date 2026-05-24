@@ -614,7 +614,7 @@ describe("runner safety", () => {
     expect(result.output).toContain('    m._uiTitleLabel.text = "hi"');
   });
 
-  it("does not require _ui prefixes in MainScene scripts", () => {
+  it("does not exempt scripts by MainScene basename alone", () => {
     const src =
       "sub init()\n" +
       '    m.contentGrid = m.top.findNode("contentGrid")\n' +
@@ -627,13 +627,16 @@ describe("runner safety", () => {
     });
 
     expect(result.diagnostics).toEqual([]);
+    expect(result.output).toContain(
+      '    m._uiContentGrid = m.top.findNode("contentGrid")',
+    );
   });
 
-  it("does not require _ui prefixes for scripts linked from MainScene XML", () => {
+  it("does not require _ui prefixes for scripts linked from a Scene component", () => {
     const xmlPath = "components/app/AppScene.xml";
     const brsPath = "components/app/AppSceneLogic.brs";
     const xml =
-      '<component name="MainScene" extends="Scene">\n' +
+      '<component name="RootView" extends="Scene">\n' +
       '  <script type="text/brightscript" uri="AppSceneLogic.brs" />\n' +
       "</component>\n";
     const brs =
