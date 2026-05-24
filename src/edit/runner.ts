@@ -1,6 +1,7 @@
 import { Formatter } from "brighterscript-formatter";
 import { ruleSetting, type BsprettierConfig } from "../config.js";
 import { parseBrs } from "../parser/brighterscript-adapter.js";
+import { formatMetrics } from "../parser/metrics.js";
 import { parseXml } from "../parser/xml.js";
 import { getProjectContext, type ProjectContext } from "../project/context.js";
 import { BRS_RULES, XML_RULES } from "../rules/registry.js";
@@ -86,7 +87,12 @@ function runFormatter(
       formatter = new Formatter(options);
       formatterCache.set(options, formatter);
     }
-    return formatter.format(text);
+    if (!formatMetrics.enabled) return formatter.format(text);
+    const t0 = performance.now();
+    const result = formatter.format(text);
+    formatMetrics.bsfmtCount++;
+    formatMetrics.bsfmtMs += performance.now() - t0;
+    return result;
   } catch (e: any) {
     diagnostics.push({
       ruleId: "brs/format-style",
@@ -234,8 +240,12 @@ function formatBrs(
     const parse = currentParse;
     const phaseEdits: Edit[] = [];
     const phaseDiags: Diagnostic[] = [];
+    // Time the whole rule-processing loop once per phase (not per rule.run) so
+    // the metric stays representative without performance.now() call overhead.
+    const rt0 = formatMetrics.enabled ? performance.now() : 0;
     for (const { rule, severity } of active) {
       if (rule.phase !== phase) continue;
+      const prt0 = formatMetrics.perRule ? performance.now() : 0;
       const result = rule.run({
         filePath,
         source: current,
@@ -245,6 +255,11 @@ function formatBrs(
         severity,
         parse,
       });
+      if (formatMetrics.perRule) {
+        const dt = performance.now() - prt0;
+        formatMetrics.ruleMs.set(rule.id, (formatMetrics.ruleMs.get(rule.id) ?? 0) + dt);
+        formatMetrics.ruleCount.set(rule.id, (formatMetrics.ruleCount.get(rule.id) ?? 0) + 1);
+      }
       for (const e of result.edits) {
         if (isSuppressed(suppression, e.offset, e.ruleId)) continue;
         if (severity === "info") continue;
@@ -258,6 +273,7 @@ function formatBrs(
         phaseDiags.push(d);
       }
     }
+    if (formatMetrics.enabled) formatMetrics.rulesMs += performance.now() - rt0;
     const conflict = findConflict(phaseEdits);
     if (conflict) {
       // The fix did not land, so the fixable diagnostics stay visible.
@@ -274,7 +290,9 @@ function formatBrs(
     }
     if (phaseEdits.length > 0) {
       for (const e of phaseEdits) appliedRuleIds.add(e.ruleId);
+      const at0 = formatMetrics.enabled ? performance.now() : 0;
       current = applyEdits(current, phaseEdits);
+      if (formatMetrics.enabled) formatMetrics.applyMs += performance.now() - at0;
       if (isLastPhase) {
         finalParsePending = true;
       } else {
@@ -378,8 +396,12 @@ function formatXml(
     const parse = currentParse;
     const phaseEdits: Edit[] = [];
     const phaseDiags: Diagnostic[] = [];
+    // Time the whole rule-processing loop once per phase (not per rule.run) so
+    // the metric stays representative without performance.now() call overhead.
+    const rt0 = formatMetrics.enabled ? performance.now() : 0;
     for (const { rule, severity } of active) {
       if (rule.phase !== phase) continue;
+      const prt0 = formatMetrics.perRule ? performance.now() : 0;
       const result = rule.run({
         filePath,
         source: current,
@@ -389,6 +411,11 @@ function formatXml(
         severity,
         parse,
       });
+      if (formatMetrics.perRule) {
+        const dt = performance.now() - prt0;
+        formatMetrics.ruleMs.set(rule.id, (formatMetrics.ruleMs.get(rule.id) ?? 0) + dt);
+        formatMetrics.ruleCount.set(rule.id, (formatMetrics.ruleCount.get(rule.id) ?? 0) + 1);
+      }
       for (const e of result.edits) {
         if (isSuppressed(suppression, e.offset, e.ruleId)) continue;
         if (severity === "info") continue;
@@ -402,6 +429,7 @@ function formatXml(
         phaseDiags.push(d);
       }
     }
+    if (formatMetrics.enabled) formatMetrics.rulesMs += performance.now() - rt0;
     const conflict = findConflict(phaseEdits);
     if (conflict) {
       // The fix did not land, so the fixable diagnostics stay visible.
@@ -418,7 +446,9 @@ function formatXml(
     }
     if (phaseEdits.length > 0) {
       for (const e of phaseEdits) appliedRuleIds.add(e.ruleId);
+      const at0 = formatMetrics.enabled ? performance.now() : 0;
       current = applyEdits(current, phaseEdits);
+      if (formatMetrics.enabled) formatMetrics.applyMs += performance.now() - at0;
       currentParse = parseXml(current);
       if (currentParse.fatal) {
         return {

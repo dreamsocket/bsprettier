@@ -4,7 +4,7 @@
  * original source so trivia outside edited regions survives byte-for-byte.
  */
 import { parse as parseXmlCst } from "@xml-tools/parser";
-import { parseMetrics } from "./metrics.js";
+import { formatMetrics } from "./metrics.js";
 
 export interface XmlAttribute {
   name: string;
@@ -113,11 +113,11 @@ function buildElement(node: CstNode, parent: XmlElement | null): XmlElement {
 }
 
 export function parseXml(source: string): XmlParseResult {
-  if (!parseMetrics.enabled) return parseXmlImpl(source);
+  if (!formatMetrics.enabled) return parseXmlImpl(source);
   const t0 = performance.now();
   const result = parseXmlImpl(source);
-  parseMetrics.xmlCount++;
-  parseMetrics.xmlMs += performance.now() - t0;
+  formatMetrics.xmlCount++;
+  formatMetrics.xmlMs += performance.now() - t0;
   return result;
 }
 

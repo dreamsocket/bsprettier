@@ -28,7 +28,7 @@ import { defaultConfig, DEFAULT_IGNORE } from "../src/config.js";
 import { formatFile, type FormatFileResult } from "../src/edit/runner.js";
 import { migrateOnChangeObservers } from "../src/edit/onchange-migration.js";
 import { getProjectContext } from "../src/project/context.js";
-import { parseMetrics, resetParseMetrics } from "../src/parser/metrics.js";
+import { formatMetrics, resetFormatMetrics } from "../src/parser/metrics.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "..");
@@ -39,6 +39,7 @@ interface BenchArgs {
   seed: number;
   out: string;
   corpus?: string;
+  perRule: boolean;
 }
 
 function parseArgs(argv: string[]): BenchArgs {
@@ -46,12 +47,14 @@ function parseArgs(argv: string[]): BenchArgs {
     files: 1200,
     seed: 1,
     out: join(REPO_ROOT, ".bench-corpus"),
+    perRule: false,
   };
   for (const arg of argv) {
     if (arg.startsWith("--files=")) args.files = Number(arg.slice(8));
     else if (arg.startsWith("--seed=")) args.seed = Number(arg.slice(7));
     else if (arg.startsWith("--out=")) args.out = resolve(arg.slice(6));
     else if (arg.startsWith("--corpus=")) args.corpus = resolve(arg.slice(9));
+    else if (arg === "--per-rule") args.perRule = true;
     else throw new Error(`unknown option: ${arg}`);
   }
   if (!Number.isFinite(args.files) || args.files < 1) {
@@ -193,8 +196,9 @@ function main(): void {
   const ctxMs = performance.now() - ctxStart;
 
   // ---- Phase: format (instrument parser calls here) --------------------------
-  resetParseMetrics();
-  parseMetrics.enabled = true;
+  resetFormatMetrics();
+  formatMetrics.enabled = true;
+  formatMetrics.perRule = args.perRule;
   const formatStart = performance.now();
   let changed = 0;
   let errored = 0;
@@ -219,7 +223,8 @@ function main(): void {
     }
   }
   const formatMs = performance.now() - formatStart;
-  parseMetrics.enabled = false;
+  formatMetrics.enabled = false;
+  formatMetrics.perRule = false;
 
   // ---- Phase: write (synthetic corpus only; never touch external paths) ------
   let writeMs = 0;
@@ -232,8 +237,12 @@ function main(): void {
   }
 
   const totalMs = performance.now() - t0;
-  const parseMs = parseMetrics.brsMs + parseMetrics.xmlMs;
-  const parseCount = parseMetrics.brsCount + parseMetrics.xmlCount;
+  const parseMs = formatMetrics.brsMs + formatMetrics.xmlMs;
+  const parseCount = formatMetrics.brsCount + formatMetrics.xmlCount;
+  const bsfmtMs = formatMetrics.bsfmtMs;
+  const rulesMs = formatMetrics.rulesMs;
+  const applyMs = formatMetrics.applyMs;
+  const otherMs = formatMs - parseMs - bsfmtMs - rulesMs - applyMs;
 
   // ---- Report ---------------------------------------------------------------
   const mode = args.corpus ? `external (${args.corpus})` : `synthetic seed=${args.seed}`;
@@ -258,15 +267,48 @@ function main(): void {
       : `write         (skipped: external corpus is read-only)`,
     `total         ${fmtMs(totalMs).padStart(10)}`,
     "",
-    "parsing (within format phase)",
-    "-----------------------------",
-    `brs parses    ${String(parseMetrics.brsCount).padStart(7)}   ${fmtMs(parseMetrics.brsMs)}`,
-    `xml parses    ${String(parseMetrics.xmlCount).padStart(7)}   ${fmtMs(parseMetrics.xmlMs)}`,
+    "format internals (slice of format phase)",
+    "-----------------------------------------",
+    `parse         ${fmtMs(parseMs).padStart(10)}   ${pct(parseMs, formatMs)}`,
+    `bsfmt         ${fmtMs(bsfmtMs).padStart(10)}   ${pct(bsfmtMs, formatMs)}`,
+    `rules         ${fmtMs(rulesMs).padStart(10)}   ${pct(rulesMs, formatMs)}`,
+    `applyEdits    ${fmtMs(applyMs).padStart(10)}   ${pct(applyMs, formatMs)}`,
+    // Slices are timed independently; the remainder (suppression maps, rule
+    // selection, dispatch) plus ~1% clock/overhead noise. May go slightly
+    // negative when measurement overhead exceeds the genuine remainder.
+    `other         ${fmtMs(otherMs).padStart(10)}   ${pct(otherMs, formatMs)}`,
+    "",
+    "parsing detail",
+    "--------------",
+    `brs parses    ${String(formatMetrics.brsCount).padStart(7)}   ${fmtMs(formatMetrics.brsMs)}`,
+    `xml parses    ${String(formatMetrics.xmlCount).padStart(7)}   ${fmtMs(formatMetrics.xmlMs)}`,
+    `bsfmt calls   ${String(formatMetrics.bsfmtCount).padStart(7)}   ${fmtMs(bsfmtMs)}`,
     `total parses  ${String(parseCount).padStart(7)}   ${fmtMs(parseMs)}`,
-    `parse / format            ${pct(parseMs, formatMs)}`,
     `parses / file             ${(parseCount / filePaths.length).toFixed(2)}`,
     "",
   ];
+
+  if (args.perRule) {
+    const rows = [...formatMetrics.ruleMs.entries()]
+      .map(([id, ms]) => ({ id, ms, count: formatMetrics.ruleCount.get(id) ?? 0 }))
+      .sort((a, b) => b.ms - a.ms);
+    const sumRuleMs = rows.reduce((s, r) => s + r.ms, 0);
+    const idWidth = Math.max(7, ...rows.map((r) => r.id.length));
+    lines.push(
+      "per-rule profile (sorted by total time)",
+      "---------------------------------------",
+      // rulesMs aggregate is inflated by per-rule timing overhead in this mode;
+      // use the per-rule sum as the denominator for share-of-rules.
+      `${"rule".padEnd(idWidth)}   ${"ms".padStart(9)}   ${"calls".padStart(7)}   ${"us/call".padStart(8)}   ${"%rules".padStart(7)}   ${"%fmt".padStart(6)}`,
+      ...rows.map((r) => {
+        const usPer = r.count > 0 ? (r.ms * 1000) / r.count : 0;
+        return `${r.id.padEnd(idWidth)}   ${r.ms.toFixed(1).padStart(9)}   ${String(r.count).padStart(7)}   ${usPer.toFixed(1).padStart(8)}   ${pct(r.ms, sumRuleMs).padStart(7)}   ${pct(r.ms, formatMs).padStart(6)}`;
+      }),
+      `${"TOTAL".padEnd(idWidth)}   ${sumRuleMs.toFixed(1).padStart(9)}`,
+      "",
+    );
+  }
+
   console.log(lines.join("\n"));
 }
 

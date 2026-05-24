@@ -6,7 +6,7 @@
 import { Lexer } from "brighterscript/dist/lexer/Lexer.js";
 import { Parser, ParseMode } from "brighterscript/dist/parser/Parser.js";
 import { LineIndex } from "../util/line-index.js";
-import { parseMetrics } from "./metrics.js";
+import { formatMetrics } from "./metrics.js";
 import type { Span } from "../edit/types.js";
 
 export interface BscToken {
@@ -135,11 +135,11 @@ export function parseBrs(
   source: string,
   filePath: string,
 ): BrsParseResult {
-  if (!parseMetrics.enabled) return parseBrsImpl(source, filePath);
+  if (!formatMetrics.enabled) return parseBrsImpl(source, filePath);
   const t0 = performance.now();
   const result = parseBrsImpl(source, filePath);
-  parseMetrics.brsCount++;
-  parseMetrics.brsMs += performance.now() - t0;
+  formatMetrics.brsCount++;
+  formatMetrics.brsMs += performance.now() - t0;
   return result;
 }
 
