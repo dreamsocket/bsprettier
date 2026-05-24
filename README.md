@@ -110,23 +110,19 @@ const result = formatText("components/foo/Bar.brs", source, loadConfig());
 if (result.changed) console.log(result.output);
 ```
 
-## Build Targets
+## Build
 
 ```sh
-npm run build:lib
-npm run build:node
 npm run build
 ```
 
-`build:lib` emits the package library files and types under `dist/`.
-`build:node` creates `dist/bsprettier.cjs`, a single bundled JavaScript file
-that can be run directly with Node:
+`build` runs `tsc` to emit the package library, CLI, and type declarations
+under `dist/`. The `bsprettier` bin runs directly from that output; there is no
+separate bundle step. To run the CLI from a build without the installed bin:
 
 ```sh
-node dist/bsprettier.cjs "components/**/*.{brs,bs,xml}" --check
+node dist/node.js "components/**/*.{brs,bs,xml}" --check
 ```
-
-`build` runs both targets.
 
 ### Exit codes
 
