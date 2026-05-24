@@ -666,4 +666,80 @@ describe("cli discovery", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it.sequential("discovers configuration from bsprettier.json", async () => {
+    const root = mkdtempSync(join(tmpdir(), "bsprettier-cli-"));
+    const components = join(root, "components");
+
+    mkdirSync(components, { recursive: true });
+    // Disable bsfmt and the one rule that would rewrite this file. A clean exit
+    // is only possible if bsprettier.json is actually discovered and honored.
+    writeFileSync(
+      join(root, "bsprettier.json"),
+      JSON.stringify({
+        formatter: null,
+        rules: { "brs/block-if-form": "off", "brs/if-condition-parens": "off" },
+      }),
+      "utf8",
+    );
+    writeFileSync(
+      join(components, "Widget.brs"),
+      "sub init()\n    if (m.x) then m.y = 1\nend sub\n",
+      "utf8",
+    );
+
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    try {
+      process.chdir(root);
+
+      // Without the config, defaults would split the single-line if and exit 1.
+      await expect(main(["components/**/*.brs", "--check"])).resolves.toBe(0);
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it.sequential("applies ignore patterns to globs outside the current directory", async () => {
+    const root = mkdtempSync(join(tmpdir(), "bsprettier-cli-"));
+    const cwd = join(root, "tool");
+    const components = join(root, "target", "components");
+    const vendor = join(components, "vendor");
+
+    mkdirSync(cwd, { recursive: true });
+    mkdirSync(vendor, { recursive: true });
+    // `**/vendor/**` is not a built-in default ignore, so excluding the vendor
+    // file proves both that bsprettier.json is loaded and that ignore patterns
+    // apply to an out-of-cwd glob (fast-glob's own `ignore` silently did not).
+    writeFileSync(
+      join(cwd, "bsprettier.json"),
+      JSON.stringify({ ignore: ["**/vendor/**"] }),
+      "utf8",
+    );
+    const changing = "sub init()\n    if (m.x) then m.y = 1\nend sub\n";
+    writeFileSync(join(components, "Widget.brs"), changing, "utf8");
+    writeFileSync(join(vendor, "Lib.brs"), changing, "utf8");
+
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    try {
+      process.chdir(cwd);
+
+      await expect(
+        main(["../target/components/**/*.brs", "--list-different"]),
+      ).resolves.toBe(1);
+
+      const out = stdout.mock.calls.map(([chunk]) => String(chunk)).join("");
+      expect(out).toContain("Widget.brs");
+      expect(out).not.toContain("vendor");
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

@@ -155,8 +155,8 @@ auto-fix; they report convention issues only.
 
 ## Configuration
 
-Discovered via cosmiconfig: `bsprettier.config.json`, `.bsprettierrc.json`,
-`.bsprettierrc`, or a `bsprettier` key in `package.json`. See
+Discovered via cosmiconfig: `bsprettier.json`, `bsprettier.config.json`,
+`.bsprettierrc.json`, `.bsprettierrc`, or a `bsprettier` key in `package.json`. See
 [`bsprettier.schema.json`](./bsprettier.schema.json) for the full shape.
 
 ```json
