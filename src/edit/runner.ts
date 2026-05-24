@@ -1,3 +1,4 @@
+import { Formatter } from "brighterscript-formatter";
 import { ruleSetting, type BsprettierConfig } from "../config.js";
 import { parseBrs } from "../parser/brighterscript-adapter.js";
 import { parseXml } from "../parser/xml.js";
@@ -62,6 +63,49 @@ function phasesOf<R extends { phase: number }>(rules: ActiveRule<R>[]): number[]
   return [...new Set(rules.map((r) => r.rule.phase))].sort((a, b) => a - b);
 }
 
+/**
+ * Run brighterscript-formatter (bsfmt) when configured. Used both as a
+ * pre-processing pass (clean input for our AST rules) and as a final pass (fix
+ * indentation drift introduced when our rules move whole declarations around).
+ */
+function runFormatter(
+  text: string,
+  config: BsprettierConfig,
+  diagnostics: Diagnostic[],
+): string {
+  if (config.formatter === null || config.formatter === undefined) return text;
+  try {
+    return new Formatter().format(text, config.formatter);
+  } catch (e: any) {
+    diagnostics.push({
+      ruleId: "brs/format-style",
+      severity: "warn",
+      message: `brighterscript-formatter error: ${e.message || String(e)}`,
+      fixable: false,
+    });
+    return text;
+  }
+}
+
+/**
+ * Drop fixable diagnostics whose fix is actually applied this phase. A fixable
+ * diagnostic is redundant once its edit lands in the output — the change itself
+ * is the report. We keep it only when the fix is NOT applied: a collision left
+ * it edit-less, or a conflict dropped the whole phase. Matched to its edit by
+ * rule id and span offset (both still in the phase's pre-apply coordinates).
+ */
+function reportableDiagnostics(
+  phaseDiags: Diagnostic[],
+  appliedEdits: Edit[],
+): Diagnostic[] {
+  if (appliedEdits.length === 0) return phaseDiags;
+  const applied = new Set(appliedEdits.map((e) => `${e.ruleId}@${e.offset}`));
+  return phaseDiags.filter(
+    (d) =>
+      !(d.fixable && d.span && applied.has(`${d.ruleId}@${d.span.offset}`)),
+  );
+}
+
 function unchanged(
   filePath: string,
   source: string,
@@ -96,14 +140,49 @@ function formatBrs(
   projectSources: ReadonlyMap<string, string> | undefined,
 ): FormatFileResult {
   const active = selectRules<BrsRule>(BRS_RULES, config, onlyRules);
-  const initial = parseBrs(source, filePath);
+  const diagnostics: Diagnostic[] = [];
+  const appliedRuleIds = new Set<string>();
+
+  // Whole-file suppression check first
+  const suppressionCheck = buildSuppressionMap(source, "brs");
+  if (suppressionCheck.fileDisabled) {
+    return unchanged(filePath, source, diagnostics);
+  }
+
+  const originalParse = parseBrs(source, filePath);
+  if (originalParse.fatal) {
+    return {
+      filePath,
+      status: "parse-error",
+      output: source,
+      changed: false,
+      diagnostics,
+      ruleIds: [],
+      errorMessage: originalParse.diagnostics
+        .filter((d) => d.severity === 1)
+        .map((d) => d.message)
+        .join("; "),
+    };
+  }
+
+  let current = source;
+
+  // Pre-processing pass: clean input so our AST rules see well-formed source.
+  const preFormatted = runFormatter(current, config, diagnostics);
+  if (preFormatted !== current) {
+    current = preFormatted;
+    appliedRuleIds.add("brs/format-style");
+  }
+
+  const initial =
+    current === source ? originalParse : parseBrs(current, filePath);
   if (initial.fatal) {
     return {
       filePath,
       status: "parse-error",
       output: source,
       changed: false,
-      diagnostics: [],
+      diagnostics,
       ruleIds: [],
       errorMessage: initial.diagnostics
         .filter((d) => d.severity === 1)
@@ -111,11 +190,18 @@ function formatBrs(
         .join("; "),
     };
   }
-  if (active.length === 0) return unchanged(filePath, source, []);
 
-  let current = source;
-  const diagnostics: Diagnostic[] = [];
-  const appliedRuleIds = new Set<string>();
+  if (active.length === 0) {
+    const changed = current !== source;
+    return {
+      filePath,
+      status: changed ? "changed" : "unchanged",
+      output: current,
+      changed,
+      diagnostics,
+      ruleIds: [...appliedRuleIds],
+    };
+  }
 
   for (const phase of phasesOf(active)) {
     const suppression = buildSuppressionMap(current, "brs");
@@ -135,6 +221,7 @@ function formatBrs(
       };
     }
     const phaseEdits: Edit[] = [];
+    const phaseDiags: Diagnostic[] = [];
     for (const { rule, severity } of active) {
       if (rule.phase !== phase) continue;
       const result = rule.run({
@@ -155,11 +242,13 @@ function formatBrs(
         if (d.span && isSuppressed(suppression, d.span.offset, d.ruleId)) {
           continue;
         }
-        diagnostics.push(d);
+        phaseDiags.push(d);
       }
     }
     const conflict = findConflict(phaseEdits);
     if (conflict) {
+      // The fix did not land, so the fixable diagnostics stay visible.
+      diagnostics.push(...phaseDiags);
       return {
         filePath,
         status: "conflict",
@@ -174,6 +263,17 @@ function formatBrs(
       for (const e of phaseEdits) appliedRuleIds.add(e.ruleId);
       current = applyEdits(current, phaseEdits);
     }
+    diagnostics.push(...reportableDiagnostics(phaseDiags, phaseEdits));
+  }
+
+  // Final pass: re-run bsfmt to repair indentation/spacing drift left behind
+  // when our rules relocated whole declarations (e.g. a routine moved together
+  // with its leading comment). bsfmt is idempotent and preserves our `if(`
+  // spelling, so it only cleans up the layout.
+  const postFormatted = runFormatter(current, config, diagnostics);
+  if (postFormatted !== current) {
+    current = postFormatted;
+    appliedRuleIds.add("brs/format-style");
   }
 
   const finalParse = parseBrs(current, filePath);
@@ -244,6 +344,7 @@ function formatXml(
       };
     }
     const phaseEdits: Edit[] = [];
+    const phaseDiags: Diagnostic[] = [];
     for (const { rule, severity } of active) {
       if (rule.phase !== phase) continue;
       const result = rule.run({
@@ -264,11 +365,13 @@ function formatXml(
         if (d.span && isSuppressed(suppression, d.span.offset, d.ruleId)) {
           continue;
         }
-        diagnostics.push(d);
+        phaseDiags.push(d);
       }
     }
     const conflict = findConflict(phaseEdits);
     if (conflict) {
+      // The fix did not land, so the fixable diagnostics stay visible.
+      diagnostics.push(...phaseDiags);
       return {
         filePath,
         status: "conflict",
@@ -283,6 +386,7 @@ function formatXml(
       for (const e of phaseEdits) appliedRuleIds.add(e.ruleId);
       current = applyEdits(current, phaseEdits);
     }
+    diagnostics.push(...reportableDiagnostics(phaseDiags, phaseEdits));
   }
 
   const finalParse = parseXml(current);

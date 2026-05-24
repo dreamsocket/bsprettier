@@ -305,6 +305,8 @@ describe("runner safety", () => {
       '    m._REGEX_FOLLOWED_BY_SLASH = CreateObject("roRegex", "/$", "")\n' +
       "    m.TILE_OFFSET = 1\n" +
       '    m._SFVodOlyEndLabel = "End"\n' +
+      "    print m.TILE_OFFSET\n" +
+      "    print m._SFVodOlyEndLabel\n" +
       "end sub\n";
     const result = formatFile({
       filePath: "Constants.brs",
@@ -313,11 +315,66 @@ describe("runner safety", () => {
       onlyRules: new Set(["audit/private-member-naming"]),
     });
 
-    expect(result.diagnostics).toHaveLength(2);
-    expect(result.diagnostics.map((d) => d.message)).toEqual([
-      'Member "m.TILE_OFFSET" is a private constant; keep its ALL_CAPS spelling and add a leading "_" (rename to "m._TILE_OFFSET").',
-      'Member "m._SFVodOlyEndLabel" should be lowerCamelCase (optionally _-prefixed for private members).',
-    ]);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.output).toContain("    m._TILE_OFFSET = 1");
+    expect(result.output).toContain("    print m._TILE_OFFSET");
+    expect(result.output).toContain('    m._sfVodOlyEndLabel = "End"');
+    expect(result.output).toContain("    print m._sfVodOlyEndLabel");
+  });
+
+  it("renames upper-camel member assignments across all m references", () => {
+    const src =
+      "sub init()\n" +
+      "    m.top.RemoveChild(m.BrightLineDirect)\n" +
+      "    m.BrightLineDirect = invalid\n" +
+      "    m.BrightLineDirect = CreateObject(\"roSGNode\", \"BrightLineDirect:BL_init\")\n" +
+      "    m.BrightLineDirect.ObserveField(\"state\", \"BrightLine_OnStateChange\")\n" +
+      "end sub\n";
+    const result = formatFile({
+      filePath: "BrightLine.brs",
+      source: src,
+      config,
+      onlyRules: new Set(["audit/private-member-naming"]),
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.output).toContain("m.top.RemoveChild(m._brightLineDirect)");
+    expect(result.output).toContain("    m._brightLineDirect = invalid");
+    expect(result.output).toContain(
+      "    m._brightLineDirect.ObserveField",
+    );
+    expect(result.output).not.toContain("m.BrightLineDirect");
+  });
+
+  it("does not surface private member diagnostics when a later _ui rewrite handles the member", () => {
+    const xmlPath = "components/Player.xml";
+    const brsPath = "components/Player.brs";
+    const xml =
+      '<component name="Player" extends="Group">\n' +
+      '  <script type="text/brightscript" uri="Player.brs" />\n' +
+      "</component>\n";
+    const brs =
+      "sub init()\n" +
+      '    m._SFVodOlyEndLabel = m.top.findNode("SFVodOlyEndLabel")\n' +
+      '    m._SFVodOlyEndLabel.labelText = "Done"\n' +
+      "end sub\n";
+    const result = formatFile({
+      filePath: brsPath,
+      source: brs,
+      config,
+      projectSources: new Map([
+        [xmlPath, xml],
+        [brsPath, brs],
+      ]),
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.output).toContain(
+      '    m._uiSfVodOlyEndLabel = m.top.findNode("SFVodOlyEndLabel")',
+    );
+    expect(result.output).toContain(
+      '    m._uiSfVodOlyEndLabel.labelText = "Done"',
+    );
   });
 
   it("allows standalone utility functions to remain public", () => {
@@ -352,10 +409,11 @@ describe("runner safety", () => {
     expect(result.diagnostics).toEqual([]);
   });
 
-  it("requires _ui prefixes for component-local findNode members", () => {
+  it("renames component-local findNode members to the _ui prefix", () => {
     const src =
       "sub init()\n" +
       '    m.titleLabel = m.top.findNode("titleLabel")\n' +
+      "    m.titleLabel.text = \"hi\"\n" +
       "end sub\n";
     const result = formatFile({
       filePath: "Widget.brs",
@@ -364,8 +422,12 @@ describe("runner safety", () => {
       onlyRules: new Set(["audit/ui-node-prefix"]),
     });
 
-    expect(result.diagnostics).toHaveLength(1);
-    expect(result.diagnostics[0]!.message).toContain("m.titleLabel");
+    // The fix is applied, so no warning is surfaced; the node id string is kept.
+    expect(result.diagnostics).toEqual([]);
+    expect(result.output).toContain(
+      '    m._uiTitleLabel = m.top.findNode("titleLabel")',
+    );
+    expect(result.output).toContain('    m._uiTitleLabel.text = "hi"');
   });
 
   it("does not require _ui prefixes in MainScene scripts", () => {
@@ -441,7 +503,7 @@ describe("runner safety", () => {
     expect(result.diagnostics).toEqual([]);
   });
 
-  it("exempts _-prefixed Animation and Interpolator members from the _ui rule", () => {
+  it("renames a UI member but leaves _-prefixed Animation/Interpolator members alone", () => {
     const xmlPath = "components/Widget.xml";
     const brsPath = "components/Widget.brs";
     const xml =
@@ -476,12 +538,14 @@ describe("runner safety", () => {
       onlyRules: new Set(["audit/ui-node-prefix"]),
     });
 
-    expect(result.diagnostics).toHaveLength(1);
-    expect(result.diagnostics[0]!.message).toContain("m.titleLabel");
-    expect(result.diagnostics[0]!.message).toContain("_ui*");
+    // The already-private animation/interpolator handles are untouched; only the
+    // ordinary UI Label handle is renamed to the _ui prefix. No warnings remain.
+    expect(result.diagnostics).toEqual([]);
+    expect(result.output).toContain('    m._fadeAnimation = m.top.findNode("fadeAnimation")');
+    expect(result.output).toContain('    m._uiTitleLabel = m.top.findNode("titleLabel")');
   });
 
-  it("requires a _ prefix for Animation and Interpolator members", () => {
+  it("renames Animation and Interpolator members to a private prefix", () => {
     const xmlPath = "components/Widget.xml";
     const brsPath = "components/Widget.brs";
     const xml =
@@ -508,11 +572,87 @@ describe("runner safety", () => {
       onlyRules: new Set(["audit/ui-node-prefix"]),
     });
 
-    expect(result.diagnostics).toHaveLength(2);
-    for (const d of result.diagnostics) {
-      expect(d.message).toContain("_*");
-      expect(d.message).not.toContain("_ui");
-    }
+    // Animation/Interpolator handles get only a private `_` prefix, never `_ui`.
+    expect(result.diagnostics).toEqual([]);
+    expect(result.output).toContain('    m._fadeAnimation = m.top.findNode("fadeAnimation")');
+    expect(result.output).toContain('    m._fadeInterpolator = m.top.findNode("fadeInterpolator")');
+    expect(result.output).not.toContain("_uiFade");
+  });
+
+  it("renames a UI handle read site in a sibling scope script", () => {
+    const xmlPath = "components/player/Player.xml";
+    const mainBrsPath = "components/player/Player.brs";
+    const viewBrsPath = "components/player/Playerview.brs";
+    const xml =
+      '<component name="Player" extends="Group">\n' +
+      '  <script type="text/brightscript" uri="Player.brs" />\n' +
+      '  <script type="text/brightscript" uri="Playerview.brs" />\n' +
+      "</component>\n";
+    // The handle is assigned in Player.brs and only read in Playerview.brs.
+    const mainBrs =
+      "sub init()\n" +
+      '    m.tileGroup = m.top.findNode("tileGroup")\n' +
+      "end sub\n";
+    const viewBrs =
+      "sub render()\n" +
+      "    m.tileGroup.visible = true\n" +
+      "end sub\n";
+    const projectSources = new Map([
+      [xmlPath, xml],
+      [mainBrsPath, mainBrs],
+      [viewBrsPath, viewBrs],
+    ]);
+
+    const main = formatFile({
+      filePath: mainBrsPath,
+      source: mainBrs,
+      config,
+      projectSources,
+      onlyRules: new Set(["audit/ui-node-prefix"]),
+    });
+    expect(main.output).toContain(
+      '    m._uiTileGroup = m.top.findNode("tileGroup")',
+    );
+
+    // The sibling that only reads the handle must be rewritten too.
+    const view = formatFile({
+      filePath: viewBrsPath,
+      source: viewBrs,
+      config,
+      projectSources,
+      onlyRules: new Set(["audit/ui-node-prefix"]),
+    });
+    expect(view.diagnostics).toEqual([]);
+    expect(view.output).toContain("    m._uiTileGroup.visible = true");
+  });
+
+  it("surfaces a warning when a _ui rename target already exists", () => {
+    const xmlPath = "components/Widget.xml";
+    const brsPath = "components/Widget.brs";
+    const xml =
+      '<component name="Widget" extends="Group">\n' +
+      '  <script type="text/brightscript" uri="Widget.brs" />\n' +
+      "</component>\n";
+    // Renaming m.title → m._uiTitle collides with an existing m._uiTitle.
+    const brs =
+      "sub init()\n" +
+      '    m.title = m.top.findNode("title")\n' +
+      '    m._uiTitle = m.top.findNode("other")\n' +
+      "end sub\n";
+    const result = formatFile({
+      filePath: brsPath,
+      source: brs,
+      config,
+      projectSources: new Map([
+        [xmlPath, xml],
+        [brsPath, brs],
+      ]),
+      onlyRules: new Set(["audit/ui-node-prefix"]),
+    });
+    const messages = result.diagnostics.map((d) => d.message);
+    expect(messages.some((m) => m.includes("already exists"))).toBe(true);
+    // The colliding member is left as-is.
+    expect(result.output).toContain('    m.title = m.top.findNode("title")');
   });
 
   it("requires non-interface primary component routines to be _-prefixed", () => {
@@ -543,14 +683,14 @@ describe("runner safety", () => {
       ]),
       onlyRules: new Set(["audit/private-member-naming"]),
     });
-    expect(result.diagnostics).toHaveLength(1);
-    expect(result.diagnostics[0]!.fixable).toBe(true);
+    // The fix is applied, so no advisory warning is surfaced for it.
+    expect(result.diagnostics).toEqual([]);
     expect(result.output).toContain("sub show()");
     expect(result.output).toContain("    _helper()");
     expect(result.output).toContain("sub _helper()");
   });
 
-  it("does not require non-primary linked script routines to be _-prefixed", () => {
+  it("privatizes same-directory linked script routines but keeps namespaced utilities public", () => {
     const xmlPath = "components/Widget.xml";
     const brsPath = "components/WidgetHelpers.brs";
     const xml =
@@ -577,8 +717,10 @@ describe("runner safety", () => {
       ]),
       onlyRules: new Set(["audit/private-member-naming"]),
     });
-    expect(result.diagnostics).toEqual([]);
-    expect(result.output).toContain("sub helper()");
+    // WidgetHelpers.brs is linked (same directory as Widget.xml), so its
+    // component-local `helper` becomes private; `HTTPUtil_addQueryParams` is a
+    // namespaced global utility and stays public.
+    expect(result.output).toContain("sub _helper()");
     expect(result.output).toContain("function HTTPUtil_addQueryParams(");
   });
 
@@ -613,6 +755,92 @@ describe("runner safety", () => {
     );
   });
 
+  it("still surfaces a warning when a privatization rename cannot be applied", () => {
+    const xmlPath = "components/Widget.xml";
+    const brsPath = "components/Widget.brs";
+    const xml =
+      '<component name="Widget" extends="Group">\n' +
+      '  <script type="text/brightscript" uri="Widget.brs" />\n' +
+      "  <interface>\n" +
+      '    <function name="show" />\n' +
+      "  </interface>\n" +
+      "</component>\n";
+    // `helper` would be privatized to `_helper`, but `_helper` already exists, so
+    // the fix cannot be applied — the warning must remain visible.
+    const brs =
+      "sub show()\n" +
+      "end sub\n\n" +
+      "sub helper()\n" +
+      "end sub\n\n" +
+      "sub _helper()\n" +
+      "end sub\n";
+    const result = formatFile({
+      filePath: brsPath,
+      source: brs,
+      config,
+      projectSources: new Map([
+        [xmlPath, xml],
+        [brsPath, brs],
+      ]),
+      onlyRules: new Set(["audit/private-member-naming"]),
+    });
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]!.fixable).toBe(false);
+    expect(result.diagnostics[0]!.message).toContain("already exists");
+    expect(result.output).toBe(brs);
+  });
+
+  it("rewrites call sites in a sibling scope script when a routine is privatized", () => {
+    const xmlPath = "components/player/LivePlayer.xml";
+    const playerBrsPath = "components/player/LivePlayer.brs";
+    const trackingBrsPath = "components/player/LivePlayertracking.brs";
+    const xml =
+      '<component name="LivePlayer" extends="Group">\n' +
+      '  <script type="text/brightscript" uri="LivePlayer.brs" />\n' +
+      '  <script type="text/brightscript" uri="LivePlayertracking.brs" />\n' +
+      "  <interface>\n" +
+      '    <function name="show" />\n' +
+      "  </interface>\n" +
+      "</component>\n";
+    // trackPageLoad is declared in the tracking script (it will be privatized
+    // when that file is formatted) but called from LivePlayer.brs.
+    const trackingBrs =
+      "sub trackPageLoad()\n" +
+      "end sub\n";
+    const playerBrs =
+      "sub show()\n" +
+      "    trackPageLoad()\n" +
+      "end sub\n";
+    const projectSources = new Map([
+      [xmlPath, xml],
+      [playerBrsPath, playerBrs],
+      [trackingBrsPath, trackingBrs],
+    ]);
+
+    // Formatting LivePlayer.brs: its own routines are all public/interface, so it
+    // gains no rename diagnostics, but the call to the now-private sibling
+    // routine must be rewritten.
+    const player = formatFile({
+      filePath: playerBrsPath,
+      source: playerBrs,
+      config,
+      projectSources,
+      onlyRules: new Set(["audit/private-member-naming"]),
+    });
+    expect(player.output).toContain("    _trackPageLoad()");
+    expect(player.output).toContain("sub show()");
+
+    // Formatting the tracking script: the declaration itself is privatized.
+    const tracking = formatFile({
+      filePath: trackingBrsPath,
+      source: trackingBrs,
+      config,
+      projectSources,
+      onlyRules: new Set(["audit/private-member-naming"]),
+    });
+    expect(tracking.output).toContain("sub _trackPageLoad()");
+  });
+
   it("applies the private prefix to primary-script observer handlers", () => {
     const xmlPath = "components/Widget.xml";
     const brsPath = "components/Widget.brs";
@@ -639,7 +867,8 @@ describe("runner safety", () => {
       ]),
       onlyRules: new Set(["audit/private-member-naming"]),
     });
-    expect(result.diagnostics).toHaveLength(1);
+    // The rename is applied, so no advisory warning is surfaced for it.
+    expect(result.diagnostics).toEqual([]);
     expect(result.output).toContain(
       '    m.top.observeFieldScoped("focusedChild", "_focusNav")',
     );
@@ -714,7 +943,7 @@ describe("runner safety", () => {
     expect(result.output).toContain("function convertObject(");
   });
 
-  it("requires interface component routines to be public and unprefixed", () => {
+  it("never promotes a private _-prefixed routine to public", () => {
     const xmlPath = "components/Widget.xml";
     const brsPath = "components/Widget.brs";
     const xml =
@@ -740,13 +969,14 @@ describe("runner safety", () => {
       ]),
       onlyRules: new Set(["audit/private-member-naming"]),
     });
-    expect(result.diagnostics).toHaveLength(1);
-    expect(result.diagnostics[0]!.fixable).toBe(true);
-    expect(result.output).toContain("    show()");
-    expect(result.output).toContain("sub show()");
+    // The author marked `_show` private; we never strip the `_` to make it
+    // public, even though the interface lists a matching name.
+    expect(result.output).toContain("    _show()");
+    expect(result.output).toContain("sub _show()");
+    expect(result.output).not.toContain("sub show()");
   });
 
-  it("removes private prefixes from XML interface function names", () => {
+  it("flags but does not auto-promote a _-prefixed XML interface function name", () => {
     const src =
       '<component name="Widget" extends="Group">\n' +
       "  <interface>\n" +
@@ -760,8 +990,9 @@ describe("runner safety", () => {
       onlyRules: new Set(["audit/private-member-naming"]),
     });
     expect(result.diagnostics).toHaveLength(1);
-    expect(result.diagnostics[0]!.fixable).toBe(true);
-    expect(result.output).toContain('<function name="show" />');
+    expect(result.diagnostics[0]!.fixable).toBe(false);
+    expect(result.changed).toBe(false);
+    expect(result.output).toContain('<function name="_show" />');
   });
 
   it("diagnoses XML onChange handlers so they can move to code observers", () => {
@@ -930,14 +1161,14 @@ describe("runner safety", () => {
     ).toBe(false);
   });
 
-  it("treats a write-only non-tensed field as an outbound event", () => {
+  it("treats a write-only non-tensed field as a property (events require a tense name)", () => {
     const xmlPath = "Svc.xml";
     const brsPath = "Svc.brs";
     const xml =
       '<component name="Svc" extends="Group">\n' +
       "  <interface>\n" +
-      '    <field id="config" type="node" />\n' +
       '    <field id="error" type="string" />\n' +
+      '    <field id="config" type="node" />\n' +
       "  </interface>\n" +
       "</component>\n";
     const brs =
@@ -956,9 +1187,10 @@ describe("runner safety", () => {
       onlyRules: new Set(["xml/interface-section-order"]),
     });
     expect(result.diagnostics).toEqual([]);
-    // error (written-only → event) sorts before config (read → property).
-    expect(result.output.indexOf('id="error"')).toBeLessThan(
-      result.output.indexOf('id="config"'),
+    // Neither field has a tense name, so both are properties (an event must be
+    // tense-named AND produced). They sort alphabetically: config before error.
+    expect(result.output.indexOf('id="config"')).toBeLessThan(
+      result.output.indexOf('id="error"'),
     );
   });
 });

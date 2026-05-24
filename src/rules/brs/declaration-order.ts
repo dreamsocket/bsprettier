@@ -47,7 +47,7 @@ function firstCommentLineStart(source: string, from: number, to: number): number
 export const declarationOrder: BrsRule = {
   id: RULE_ID,
   lang: "brs",
-  phase: 0,
+  phase: 1,
   run(ctx: BrsRuleContext): RuleResult {
     const { parse, source } = ctx;
     const routines = parse.topLevelFunctions;

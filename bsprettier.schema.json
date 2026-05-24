@@ -48,6 +48,11 @@
           }
         }
       }
+    },
+    "formatter": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "description": "Configuration options for brighterscript-formatter (bsfmt). Set to null to disable formatting."
     }
   }
 }

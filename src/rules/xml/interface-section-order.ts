@@ -11,6 +11,7 @@ import {
   tagNameEquals,
 } from "../../parser/xml-helpers.js";
 import { asciiCompare } from "../../util/ascii-sort.js";
+import { detectEol } from "../../util/eol.js";
 import {
   emptyResult,
   type Diagnostic,
@@ -173,38 +174,57 @@ export const interfaceSectionOrder: XmlRule = {
       }
     }
 
-    // Already correctly ordered: nothing to do.
-    if (order.every((v, i) => v === i)) {
+    const texts = layout.members.map((m) => source.slice(m.ownStart, m.end));
+
+    // Build the reordered region. Separators between consecutive emitted members
+    // differ by mode:
+    // - No section headers: normalize blank lines. Members in the same section
+    //   are packed tight (one line break); a section boundary (Events →
+    //   Properties → Functions) gets exactly one blank line so the groups read
+    //   as visibly separate.
+    // - Section headers present: trust the author's layout and reuse the
+    //   original separators positionally, so labelled groups and their spacing
+    //   survive untouched.
+    let replacement: string;
+    if (!hasHeaders) {
+      const eol = detectEol(source);
+      replacement = texts[order[0]!]!;
+      for (let i = 1; i < order.length; i++) {
+        const sameSection =
+          rows[order[i - 1]!]!.section === rows[order[i]!]!.section;
+        replacement += (sameSection ? eol : eol + eol) + texts[order[i]!]!;
+      }
+    } else {
+      const separators: string[] = [];
+      for (let i = 1; i < layout.members.length; i++) {
+        separators.push(
+          source.slice(layout.members[i - 1]!.end, layout.members[i]!.ownStart),
+        );
+      }
+      replacement = texts[order[0]!]!;
+      for (let i = 1; i < order.length; i++) {
+        replacement += separators[i - 1]! + texts[order[i]!]!;
+      }
+    }
+
+    const regionStart = layout.members[0]!.ownStart;
+    const regionEnd = layout.members[layout.members.length - 1]!.end;
+    const original = source.slice(regionStart, regionEnd);
+
+    // Already in canonical form (order and spacing): nothing to do. This is
+    // checked against the rebuilt text, not just the order, so a needed
+    // blank-line fix is not skipped when members are already sorted.
+    if (replacement === original) {
       return { edits: [], diagnostics };
     }
 
-    // A reorder is needed. Refuse only if a comment is stranded between members
+    // A change is needed. Refuse only if a comment is stranded between members
     // and can't be carried with one of them.
     if (layout.unsafe) {
       return refuse(
         "A comment is stranded between <interface> members; section order " +
           "left unchanged to avoid misplacing it.",
       );
-    }
-
-    const texts = layout.members.map((m) => source.slice(m.ownStart, m.end));
-    const separators: string[] = [];
-    for (let i = 1; i < layout.members.length; i++) {
-      separators.push(
-        source.slice(layout.members[i - 1]!.end, layout.members[i]!.ownStart),
-      );
-    }
-
-    let replacement = texts[order[0]!]!;
-    for (let i = 1; i < order.length; i++) {
-      replacement += separators[i - 1]! + texts[order[i]!]!;
-    }
-
-    const regionStart = layout.members[0]!.ownStart;
-    const regionEnd = layout.members[layout.members.length - 1]!.end;
-    const original = source.slice(regionStart, regionEnd);
-    if (replacement === original) {
-      return { edits: [], diagnostics };
     }
 
     const edit: Edit = {

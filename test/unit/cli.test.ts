@@ -159,6 +159,74 @@ describe("cli discovery", () => {
     }
   });
 
+  it.sequential("creates init and rewrites privatized onChange handlers on write", async () => {
+    const root = mkdtempSync(join(tmpdir(), "bsprettier-cli-"));
+    const components = join(root, "components", "tasks", "Registry");
+    const xmlPath = join(components, "Registry.xml");
+    const brsPath = join(components, "Registry.brs");
+
+    mkdirSync(components, { recursive: true });
+    writeFileSync(
+      xmlPath,
+      '<component name="Registry" extends="Task">\n' +
+        '  <script type="text/brightscript" uri="Registry.brs" />\n' +
+        "  <interface>\n" +
+        '    <field id="delete" onChange="OnDelete" type="assocarray" />\n' +
+        '    <field id="read" onChange="OnRead" type="assocarray" />\n' +
+        "  </interface>\n" +
+        "</component>\n",
+      "utf8",
+    );
+    writeFileSync(
+      brsPath,
+      "sub _onDelete()\n" +
+        '    m.top.functionName = "delete"\n' +
+        "end sub\n\n" +
+        "sub _onRead()\n" +
+        '    m.top.functionName = "read"\n' +
+        "end sub\n",
+      "utf8",
+    );
+
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    try {
+      process.chdir(root);
+
+      await expect(
+        main([
+          "components/tasks/Registry/Registry.xml",
+          "components/tasks/Registry/Registry.brs",
+          "--rules=xml/no-onchange-field",
+          "--write",
+        ]),
+      ).resolves.toBe(0);
+
+      expect(readFileSync(xmlPath, "utf8")).not.toContain("onChange");
+      const output = readFileSync(brsPath, "utf8");
+      expect(output).toContain("sub init()");
+      expect(output).toContain(
+        '    m.top.observeFieldScoped("delete", "_setDelete")',
+      );
+      expect(output).toContain(
+        '    m.top.observeFieldScoped("read", "_setRead")',
+      );
+      expect(output).toContain("sub _setDelete()");
+      expect(output).toContain("sub _setRead()");
+      expect(output).not.toContain("_onDelete");
+      expect(output).not.toContain("_onRead");
+      expect(
+        stderr.mock.calls.map(([chunk]) => String(chunk)).join(""),
+      ).not.toContain("xml/no-onchange-field");
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it.sequential("prefixes private primary component routines on write", async () => {
     const root = mkdtempSync(join(tmpdir(), "bsprettier-cli-"));
     const components = join(root, "components");
@@ -213,7 +281,7 @@ describe("cli discovery", () => {
     }
   });
 
-  it.sequential("removes private prefixes from public interface routines on write", async () => {
+  it.sequential("never promotes private-prefixed routines to public on write", async () => {
     const root = mkdtempSync(join(tmpdir(), "bsprettier-cli-"));
     const components = join(root, "components");
     const xmlPath = join(components, "Widget.xml");
@@ -246,21 +314,21 @@ describe("cli discovery", () => {
     try {
       process.chdir(root);
 
-      await expect(
-        main([
-          "components/Widget.xml",
-          "components/Widget.brs",
-          "--rules=audit/private-member-naming",
-          "--write",
-        ]),
-      ).resolves.toBe(0);
+      await main([
+        "components/Widget.xml",
+        "components/Widget.brs",
+        "--rules=audit/private-member-naming",
+        "--write",
+      ]);
 
+      // The `_` prefix is the author's private marking; it is never stripped.
       expect(readFileSync(xmlPath, "utf8")).toContain(
-        '<function name="show" />',
+        '<function name="_show" />',
       );
       const output = readFileSync(brsPath, "utf8");
-      expect(output).toContain("    show()");
-      expect(output).toContain("sub show()");
+      expect(output).toContain("    _show()");
+      expect(output).toContain("sub _show()");
+      expect(output).not.toContain("sub show()");
     } finally {
       process.chdir(originalCwd);
       rmSync(root, { recursive: true, force: true });
@@ -302,6 +370,126 @@ describe("cli discovery", () => {
         '    m.top.observeFieldScoped("focusedChild", "_focusNav")',
       );
       expect(output).toContain("sub _focusNav()");
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it.sequential("rewrites sibling UI member reads on write", async () => {
+    const root = mkdtempSync(join(tmpdir(), "bsprettier-cli-"));
+    const components = join(root, "components", "player");
+    const xmlPath = join(components, "Player.xml");
+    const mainBrsPath = join(components, "Player.brs");
+    const viewBrsPath = join(components, "Playerview.brs");
+
+    mkdirSync(components, { recursive: true });
+    writeFileSync(
+      xmlPath,
+      '<component name="Player" extends="Group">\n' +
+        '  <script type="text/brightscript" uri="Player.brs" />\n' +
+        '  <script type="text/brightscript" uri="Playerview.brs" />\n' +
+        "</component>\n",
+      "utf8",
+    );
+    writeFileSync(
+      mainBrsPath,
+      "sub init()\n" +
+        '    m.tileGroup = m.top.findNode("tileGroup")\n' +
+        "end sub\n",
+      "utf8",
+    );
+    writeFileSync(
+      viewBrsPath,
+      "sub render()\n" +
+        "    m.tileGroup.visible = true\n" +
+        "end sub\n",
+      "utf8",
+    );
+
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    try {
+      process.chdir(root);
+
+      await expect(
+        main([
+          "components/player/Player.xml",
+          "components/player/Player.brs",
+          "components/player/Playerview.brs",
+          "--rules=audit/ui-node-prefix",
+          "--write",
+        ]),
+      ).resolves.toBe(0);
+
+      expect(readFileSync(mainBrsPath, "utf8")).toContain(
+        '    m._uiTileGroup = m.top.findNode("tileGroup")',
+      );
+      expect(readFileSync(viewBrsPath, "utf8")).toContain(
+        "    m._uiTileGroup.visible = true",
+      );
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it.sequential("rewrites sibling routine calls on write", async () => {
+    const root = mkdtempSync(join(tmpdir(), "bsprettier-cli-"));
+    const components = join(root, "components", "player");
+    const xmlPath = join(components, "LivePlayer.xml");
+    const playerBrsPath = join(components, "LivePlayer.brs");
+    const trackingBrsPath = join(components, "LivePlayertracking.brs");
+
+    mkdirSync(components, { recursive: true });
+    writeFileSync(
+      xmlPath,
+      '<component name="LivePlayer" extends="Group">\n' +
+        '  <script type="text/brightscript" uri="LivePlayer.brs" />\n' +
+        '  <script type="text/brightscript" uri="LivePlayertracking.brs" />\n' +
+        "  <interface>\n" +
+        '    <function name="show" />\n' +
+        "  </interface>\n" +
+        "</component>\n",
+      "utf8",
+    );
+    writeFileSync(
+      playerBrsPath,
+      "sub show()\n" +
+        "    trackPageLoad()\n" +
+        "end sub\n",
+      "utf8",
+    );
+    writeFileSync(
+      trackingBrsPath,
+      "sub trackPageLoad()\n" +
+        "end sub\n",
+      "utf8",
+    );
+
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    try {
+      process.chdir(root);
+
+      await expect(
+        main([
+          "components/player/LivePlayer.xml",
+          "components/player/LivePlayer.brs",
+          "components/player/LivePlayertracking.brs",
+          "--rules=audit/private-member-naming",
+          "--write",
+        ]),
+      ).resolves.toBe(0);
+
+      expect(readFileSync(playerBrsPath, "utf8")).toContain(
+        "    _trackPageLoad()",
+      );
+      expect(readFileSync(trackingBrsPath, "utf8")).toContain(
+        "sub _trackPageLoad()",
+      );
     } finally {
       process.chdir(originalCwd);
       rmSync(root, { recursive: true, force: true });

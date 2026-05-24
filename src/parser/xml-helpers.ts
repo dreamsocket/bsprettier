@@ -188,11 +188,15 @@ export function computeReorderLayout(
     }
 
     // Comments[0..idx] are not leading for this member. Give the ones adjacent
-    // to the previous member to it as trailers; classify the rest.
+    // to the previous member to it as trailers; classify the rest. The trailing
+    // scan stops at `nextStart` (the start of this member's attached leading
+    // comments, or the element if none) so a comment already claimed as this
+    // member's leading comment is never *also* attached as the previous member's
+    // trailer — double-claiming would duplicate it when the region is rebuilt.
     let firstUnclaimed = 0;
     if (k > 0) {
       const prev = members[k - 1]!;
-      attachTrailing(prev, elements[k - 1]!.end, el.start);
+      attachTrailing(prev, elements[k - 1]!.end, nextStart);
       // Skip the comments attachTrailing just consumed (those before prev.end).
       while (firstUnclaimed <= idx && comments[firstUnclaimed]!.end <= prev.end) {
         firstUnclaimed++;

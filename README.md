@@ -64,15 +64,12 @@ node dist/bsprettier.cjs "components/**/*.{brs,bs,xml}" --check
 
 ## Relationship to bsfmt and bslint
 
-bsprettier does **not** replace
-[`brighterscript-formatter`](https://github.com/rokucommunity/brighterscript-formatter)
-(bsfmt) or [`bslint`](https://github.com/rokucommunity/bslint). It owns only the
-Dreamsocket-specific *final* style and must run **last**.
+`bsprettier` integrates [`brighterscript-formatter`](https://github.com/rokucommunity/brighterscript-formatter) (bsfmt) internally as a pre-processing step. When formatting `.brs` and `.bs` files, `bsprettier` first runs `brighterscript-formatter` to normalize basic layout, spacing, casing, and indentation, then applies its custom AST rules.
 
-| Concern | bsfmt | bslint | bsprettier owns? |
+| Concern | Integrated bsfmt | bslint | bsprettier AST rules |
 |---|---|---|---|
-| Indentation, keyword case, trailing ws | yes | no | no (defer to bsfmt) |
-| Import sorting (`.bs`) | yes | no | no (defer to bsfmt) |
+| Indentation, keyword case, trailing ws | **yes** (prior) | no | no |
+| Import sorting (`.bs`) | **yes** (prior) | no | no |
 | Condition parentheses (presence) | no | yes (`group`) | no, but depends on it |
 | Condition paren **spacing** `if(` | no | no | **yes** |
 | Inline-if `then` presence | no | yes | no |
@@ -83,10 +80,40 @@ Dreamsocket-specific *final* style and must run **last**.
 | XML script/interface/attribute order | no | no | **yes** |
 | `onChange` field avoidance | no | no | **yes** (diagnostic) |
 
-Recommended full-project pipeline (when the project can still run the v0 tools):
+### Formatter Configuration
+
+You can customize `brighterscript-formatter` settings via the `"formatter"` key in `bsprettier.json`. 
+
+#### Default Formatter Options
+`bsprettier` comes pre-configured with the following default rules:
+```json
+{
+  "formatter": {
+    "indentStyle": "spaces",
+    "indentSpaceCount": 4,
+    "formatIndent": true,
+    "keywordCase": "lower",
+    "typeCase": "title",
+    "compositeKeywords": "split",
+    "removeTrailingWhiteSpace": true,
+    "formatInteriorWhitespace": true,
+    "insertSpaceBeforeFunctionParenthesis": false,
+    "insertSpaceBetweenEmptyCurlyBraces": false,
+    "insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces": true,
+    "insertSpaceBetweenAssociativeArrayLiteralKeyAndColon": false,
+    "formatSingleLineCommentType": "singlequote",
+    "formatMultiLineObjectsAndArrays": true
+  }
+}
+```
+
+#### Overriding & Disabling
+- **To override options:** Add the `"formatter"` block in your `bsprettier.json` containing only the options you want to change (they will merge with the defaults).
+- **To disable formatting entirely:** Set `"formatter": null` in `bsprettier.json`.
+
+Recommended full-project pipeline:
 
 ```sh
-bsfmt   "components/**/*.{brs,bs}"      --write
 bslint  --fix
 bsprettier "components/**/*.{brs,bs,xml}" --write
 ```

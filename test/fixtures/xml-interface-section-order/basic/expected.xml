@@ -3,6 +3,7 @@
   <interface>
     <field id="count" type="int" />
     <field id="title" type="string" />
+
     <function name="refresh" />
   </interface>
 </component>

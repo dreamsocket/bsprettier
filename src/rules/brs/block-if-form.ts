@@ -14,7 +14,7 @@ const RULE_ID = "brs/block-if-form";
 export const blockIfForm: BrsRule = {
   id: RULE_ID,
   lang: "brs",
-  phase: 2,
+  phase: 3,
   run(ctx: BrsRuleContext): RuleResult {
     const { parse, source } = ctx;
     const { lineIndex } = parse;

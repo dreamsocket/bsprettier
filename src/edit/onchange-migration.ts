@@ -193,27 +193,41 @@ function observerEdit(
   source: string,
   missing: OnChangeField[],
 ): Edit | null {
+  if (missing.length === 0) return null;
+
+  const replacement = missing
+    .map(
+      (field) =>
+        `    m.top.observeFieldScoped("${field.fieldId}", "${field.targetHandler}")\n`,
+    )
+    .join("");
+
   const parse = parseBrs(source, "component.brs");
   if (parse.fatal) return null;
   const init = parse.topLevelFunctions.find(
     (routine) => routine.name.toLowerCase() === "init",
   );
-  if (!init) return null;
-  if (missing.length === 0) return null;
+  if (!init) {
+    return {
+      ruleId: RULE_ID,
+      offset: 0,
+      length: 0,
+      replacement: `sub init()\n${replacement}end sub\n\n\n`,
+    };
+  }
 
   const insertAt = lineEndIncludingNewline(source, init.keywordSpan.offset);
   const indent = bodyIndent(source, init);
-  const replacement = missing
-    .map(
-      (field) =>
-        `${indent}m.top.observeFieldScoped("${field.fieldId}", "${field.targetHandler}")\n`,
-    )
-    .join("");
   return {
     ruleId: RULE_ID,
     offset: insertAt,
     length: 0,
-    replacement,
+    replacement: missing
+      .map(
+        (field) =>
+          `${indent}m.top.observeFieldScoped("${field.fieldId}", "${field.targetHandler}")\n`,
+      )
+      .join(""),
   };
 }
 
@@ -247,8 +261,8 @@ function routineRenameEdits(
   const renames = new Map<string, string>();
   for (const field of fields) {
     if (field.handler === field.targetHandler) continue;
-    const oldKey = field.handler.toLowerCase();
-    if (!routinesByName.has(oldKey)) continue;
+    const oldKey = routineKeyForHandler(field.handler, routinesByName);
+    if (!oldKey) continue;
     if (routinesByName.has(field.targetHandler.toLowerCase())) continue;
     const existing = renames.get(oldKey);
     if (existing && existing !== field.targetHandler) continue;
@@ -283,6 +297,18 @@ function routineRenameEdits(
   return edits;
 }
 
+function routineKeyForHandler(
+  handler: string,
+  routinesByName: Map<string, BrsRoutine>,
+): string | null {
+  const exact = handler.toLowerCase();
+  if (routinesByName.has(exact)) return exact;
+  const privateKey = handler.startsWith("_")
+    ? handler.slice(1).toLowerCase()
+    : `_${handler}`.toLowerCase();
+  return routinesByName.has(privateKey) ? privateKey : null;
+}
+
 export function migrateOnChangeObservers(
   sources: Map<string, string>,
 ): OnChangeMigrationResult {
@@ -300,11 +326,6 @@ export function migrateOnChangeObservers(
     if (!brsSource) continue;
     const brsParse = parseBrs(brsSource, brsPath);
     if (brsParse.fatal) continue;
-    if (!brsParse.topLevelFunctions.some(
-      (routine) => routine.name.toLowerCase() === "init",
-    )) {
-      continue;
-    }
     migrations.push({ xmlPath: filePath, brsPath, fields });
   }
 

@@ -240,6 +240,7 @@ export async function main(argv: string[]): Promise<number> {
         changedRuleIdsByFile: new Map<string, Set<string>>(),
       };
   const currentSources = migration.sources;
+  const formatProjectSources = new Map(currentSources);
   const changedRuleIdsByFile = migration.changedRuleIdsByFile;
   const changedFiles: FormatFileResult[] = [];
 
@@ -250,7 +251,7 @@ export async function main(argv: string[]): Promise<number> {
       filePath,
       source,
       config,
-      projectSources: currentSources,
+      projectSources: formatProjectSources,
       onlyRules: args.rules,
     });
 

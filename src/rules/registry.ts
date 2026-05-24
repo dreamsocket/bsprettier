@@ -37,6 +37,7 @@ export const XML_RULES: XmlRule[] = [
 ];
 
 export const ALL_RULE_IDS: string[] = [
+  "brs/format-style",
   ...BRS_RULES.map((r) => r.id),
   ...XML_RULES.map((r) => r.id),
 ];

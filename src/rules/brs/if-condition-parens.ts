@@ -12,7 +12,7 @@ const RULE_ID = "brs/if-condition-parens";
 export const ifConditionParens: BrsRule = {
   id: RULE_ID,
   lang: "brs",
-  phase: 3,
+  phase: 4,
   run(ctx: BrsRuleContext): RuleResult {
     const { parse, source } = ctx;
     const { lineIndex } = parse;

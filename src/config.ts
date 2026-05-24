@@ -1,4 +1,5 @@
 import { cosmiconfigSync } from "cosmiconfig";
+import type { FormattingOptions } from "brighterscript-formatter";
 import type { Severity } from "./edit/types.js";
 
 export type RuleSetting = Severity | "off";
@@ -17,6 +18,7 @@ export interface BsprettierConfig {
       Record<string, "event" | "property">
     >;
   };
+  formatter?: FormattingOptions | null;
 }
 
 export const DEFAULT_IGNORE = [
@@ -53,6 +55,22 @@ export function defaultConfig(): BsprettierConfig {
       interfaceSectionComments: "preserve",
       fieldClassificationOverrides: {},
     },
+    formatter: {
+      indentStyle: "spaces",
+      indentSpaceCount: 4,
+      formatIndent: true,
+      keywordCase: "lower",
+      typeCase: "title",
+      compositeKeywords: "split",
+      removeTrailingWhiteSpace: true,
+      formatInteriorWhitespace: true,
+      insertSpaceBeforeFunctionParenthesis: false,
+      insertSpaceBetweenEmptyCurlyBraces: false,
+      insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces: true,
+      insertSpaceBetweenAssociativeArrayLiteralKeyAndColon: false,
+      formatSingleLineCommentType: "singlequote",
+      formatMultiLineObjectsAndArrays: true,
+    },
   };
 }
 
@@ -72,6 +90,11 @@ function mergeConfig(
         loaded.xml?.fieldClassificationOverrides ??
         base.xml.fieldClassificationOverrides,
     },
+    formatter: loaded.formatter === null
+      ? null
+      : loaded.formatter !== undefined
+        ? { ...base.formatter, ...loaded.formatter }
+        : base.formatter,
   };
 }
 

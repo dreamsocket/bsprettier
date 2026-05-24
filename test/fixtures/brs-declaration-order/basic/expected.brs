@@ -4,7 +4,7 @@ end sub
 
 
 
-function getTitle() as string
+function getTitle() as String
     return "x"
 end function
 

@@ -7,7 +7,7 @@ const RULE_ID = "brs/declaration-spacing";
 export const declarationSpacing: BrsRule = {
   id: RULE_ID,
   lang: "brs",
-  phase: 1,
+  phase: 2,
   run(ctx: BrsRuleContext): RuleResult {
     const { parse, source, config } = ctx;
     const routines = parse.topLevelFunctions;

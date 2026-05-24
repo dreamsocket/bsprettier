@@ -26,7 +26,7 @@
   "scripts": {
     "build": "npm run build:lib && npm run build:node",
     "build:lib": "tsc -p tsconfig.json",
-    "build:node": "esbuild src/node.ts --bundle --platform=node --format=cjs --target=node20 --main-fields=module,main --outfile=dist/bsprettier.cjs",
+    "build:node": "esbuild src/node.ts --bundle --platform=node --format=cjs --target=node20 --main-fields=module,main --external:brighterscript-formatter --external:fsevents --outfile=dist/bsprettier.cjs",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -39,6 +39,7 @@
   "dependencies": {
     "@xml-tools/parser": "1.0.11",
     "brighterscript": "1.0.0-alpha.50",
+    "brighterscript-formatter": "^1.7.23",
     "cosmiconfig": "^9.0.0",
     "fast-glob": "^3.3.2",
     "ignore": "^5.3.1",
