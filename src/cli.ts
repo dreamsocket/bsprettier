@@ -20,6 +20,7 @@ interface CliArgs {
   globs: string[];
   mode: "check" | "write" | "list-different" | "none";
   verbose: boolean;
+  progress?: boolean;
   rules?: Set<string>;
   configPath?: string;
   stdinFilepath?: string;
@@ -42,6 +43,8 @@ Options:
   --config <path>     Explicit config file path.
   --stdin-filepath <p> Read stdin, write formatted text to stdout.
   --verbose           Per-rule summary in --check output.
+  --progress          Force progress output to stderr.
+  --no-progress       Disable automatic progress output.
   --help              Show this message.
 
 Exit codes: 0 clean/written, 1 --check found changes, 2 parse/conflict error,
@@ -70,6 +73,10 @@ function parseArgs(argv: string[]): CliArgs | { usageError: string } {
       modeCount++;
     } else if (arg === "--verbose") {
       args.verbose = true;
+    } else if (arg === "--progress") {
+      args.progress = true;
+    } else if (arg === "--no-progress") {
+      args.progress = false;
     } else if (arg.startsWith("--rules=")) {
       args.rules = new Set(
         arg
@@ -113,6 +120,93 @@ async function readStdin(): Promise<string> {
     chunks.push(Buffer.from(chunk));
   }
   return Buffer.concat(chunks).toString("utf8");
+}
+
+function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "?";
+  const totalSeconds = Math.ceil(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) {
+    return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes === 0
+    ? `${hours}h`
+    : `${hours}h ${remainingMinutes}m`;
+}
+
+class ProgressReporter {
+  private completed = 0;
+  private readonly startedAt = Date.now();
+  private lastRenderedAt = 0;
+  private active = false;
+
+  constructor(
+    private readonly enabled: boolean,
+    private readonly interactive: boolean,
+    private readonly total: number,
+  ) {}
+
+  begin(detail: string): void {
+    if (!this.enabled) return;
+    this.active = true;
+    this.render(detail, true);
+  }
+
+  tick(detail: string): void {
+    if (!this.enabled) return;
+    this.completed = Math.min(this.completed + 1, this.total);
+    this.render(detail, this.completed === this.total);
+  }
+
+  finish(detail: string): void {
+    if (!this.enabled || !this.active) return;
+    this.completed = this.total;
+    this.render(detail, true);
+    if (this.interactive) process.stderr.write("\n");
+    this.active = false;
+  }
+
+  clear(): void {
+    if (!this.enabled || !this.interactive || !this.active) return;
+    process.stderr.write("\r\x1b[K");
+    this.lastRenderedAt = 0;
+  }
+
+  private render(detail: string, force: boolean): void {
+    const now = Date.now();
+    const intervalMs = this.interactive ? 100 : 1000;
+    if (!force && now - this.lastRenderedAt < intervalMs) return;
+
+    const safeTotal = Math.max(this.total, 1);
+    const percent = Math.floor((this.completed / safeTotal) * 100);
+    const elapsed = now - this.startedAt;
+    const eta =
+      this.completed > 0 && this.completed < safeTotal
+        ? formatDuration(
+            (elapsed / this.completed) * (safeTotal - this.completed),
+          )
+        : this.completed >= safeTotal
+          ? "0s"
+          : "?";
+    const message =
+      `Progress ${this.completed}/${safeTotal} (${percent}%) ` +
+      `elapsed ${formatDuration(elapsed)} eta ${eta} ${pc.dim(detail)}`;
+
+    if (this.interactive) {
+      process.stderr.write(`\r${message}\x1b[K`);
+    } else {
+      process.stderr.write(`${message}\n`);
+    }
+    this.lastRenderedAt = now;
+  }
+}
+
+function shouldUseProgress(args: CliArgs): boolean {
+  return args.progress ?? process.stderr.isTTY === true;
 }
 
 function discoverFiles(
@@ -220,25 +314,37 @@ export async function main(argv: string[]): Promise<number> {
   let hadError = false;
   const initialSources = new Map<string, string>();
   const erroredFiles = new Set<string>();
+  const runsMigration = shouldRunOnChangeMigration(config, args.rules);
+  const progressTotal = files.length * 3 + (runsMigration ? 1 : 0);
+  const progress = new ProgressReporter(
+    shouldUseProgress(args),
+    process.stderr.isTTY === true,
+    progressTotal,
+  );
+
+  progress.begin(`discovered ${files.length} file(s)`);
 
   for (const filePath of files) {
     try {
       initialSources.set(filePath, readFileSync(filePath, "utf8"));
     } catch (err) {
+      progress.clear();
       process.stderr.write(
         `${pc.red("error")}: cannot read ${filePath}: ${String(err)}\n`,
       );
       hadError = true;
       erroredFiles.add(filePath);
     }
+    progress.tick(`read ${relative(cwd, filePath)}`);
   }
 
-  const migration = shouldRunOnChangeMigration(config, args.rules)
+  const migration = runsMigration
     ? migrateOnChangeObservers(initialSources)
     : {
         sources: new Map(initialSources),
         changedRuleIdsByFile: new Map<string, Set<string>>(),
       };
+  if (runsMigration) progress.tick("migrated onChange observers");
   const currentSources = migration.sources;
   const formatProjectSources = new Map(currentSources);
   const changedRuleIdsByFile = migration.changedRuleIdsByFile;
@@ -246,7 +352,10 @@ export async function main(argv: string[]): Promise<number> {
 
   for (const filePath of files) {
     const source = currentSources.get(filePath);
-    if (source === undefined) continue;
+    if (source === undefined) {
+      progress.tick(`skipped ${relative(cwd, filePath)}`);
+      continue;
+    }
     const result = formatFile({
       filePath,
       source,
@@ -262,17 +371,20 @@ export async function main(argv: string[]): Promise<number> {
           : d.severity === "warn"
             ? pc.yellow("warn")
             : pc.cyan("info");
+      progress.clear();
       process.stderr.write(
         `${sev} ${pc.dim(d.ruleId)} ${relative(cwd, filePath)}: ${d.message}\n`,
       );
     }
 
     if (result.status === "parse-error" || result.status === "conflict") {
+      progress.clear();
       process.stderr.write(
         `${pc.red("error")} ${relative(cwd, filePath)}: ${result.errorMessage ?? result.status}\n`,
       );
       hadError = true;
       erroredFiles.add(filePath);
+      progress.tick(`formatted ${relative(cwd, filePath)}`);
       continue;
     }
 
@@ -280,13 +392,18 @@ export async function main(argv: string[]): Promise<number> {
       currentSources.set(filePath, result.output);
       addRuleIds(changedRuleIdsByFile, filePath, result.ruleIds);
     }
+    progress.tick(`formatted ${relative(cwd, filePath)}`);
   }
 
   for (const filePath of files) {
-    if (erroredFiles.has(filePath)) continue;
+    if (erroredFiles.has(filePath)) {
+      progress.tick(`skipped ${relative(cwd, filePath)}`);
+      continue;
+    }
     const initial = initialSources.get(filePath);
     const current = currentSources.get(filePath);
     if (initial === undefined || current === undefined || current === initial) {
+      progress.tick(`checked ${relative(cwd, filePath)}`);
       continue;
     }
     const ruleIds = [...(changedRuleIdsByFile.get(filePath) ?? [])].sort();
@@ -303,13 +420,20 @@ export async function main(argv: string[]): Promise<number> {
       try {
         writeFileSync(filePath, current, "utf8");
       } catch (err) {
+        progress.clear();
         process.stderr.write(
           `${pc.red("error")}: cannot write ${filePath}: ${String(err)}\n`,
         );
         hadError = true;
       }
     }
+    progress.tick(
+      args.mode === "write"
+        ? `wrote ${relative(cwd, filePath)}`
+        : `checked ${relative(cwd, filePath)}`,
+    );
   }
+  progress.finish(`processed ${files.length} file(s)`);
 
   const changedCount = changedFiles.length;
 

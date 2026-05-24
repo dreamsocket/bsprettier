@@ -27,7 +27,7 @@
     "build": "npm run build:lib && npm run build:node",
     "build:lib": "tsc -p tsconfig.json",
     "build:node": "esbuild src/node.ts --bundle --platform=node --format=cjs --target=node20 --main-fields=module,main --external:brighterscript-formatter --external:fsevents --outfile=dist/bsprettier.cjs",
-    "dev": "tsx src/cli.ts",
+    "dev": "tsx src/node.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",

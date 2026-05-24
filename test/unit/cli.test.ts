@@ -18,6 +18,49 @@ afterEach(() => {
 });
 
 describe("cli discovery", () => {
+  it.sequential("prints forced progress to stderr without polluting list output", async () => {
+    const root = mkdtempSync(join(tmpdir(), "bsprettier-cli-"));
+    const components = join(root, "components");
+    const brsPath = join(components, "NeedsFormat.brs");
+
+    mkdirSync(components, { recursive: true });
+    writeFileSync(
+      brsPath,
+      "sub init()\n    if (m.x) then m.y = 1\nend sub\n",
+      "utf8",
+    );
+
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    try {
+      process.chdir(root);
+
+      await expect(
+        main(["components/**/*.brs", "--list-different", "--progress"]),
+      ).resolves.toBe(1);
+
+      const stdoutText = stdout.mock.calls
+        .map(([chunk]) => String(chunk))
+        .join("");
+      const stderrText = stderr.mock.calls
+        .map(([chunk]) => String(chunk))
+        .join("");
+
+      expect(stdoutText.trim()).toBe("components/NeedsFormat.brs");
+      expect(stderrText).toContain("Progress 0/4");
+      expect(stderrText).toContain("Progress 4/4");
+      expect(stderrText).toContain("processed 1 file(s)");
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it.sequential("supports explicit globs outside the current directory", async () => {
     const root = mkdtempSync(join(tmpdir(), "bsprettier-cli-"));
     const cwd = join(root, "tool");

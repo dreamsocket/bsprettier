@@ -20,6 +20,7 @@ npm install --save-dev @dreamsocket/bsprettier
 ```sh
 bsprettier "components/**/*.{brs,bs,xml}" --check
 bsprettier "components/**/*.{brs,bs,xml}" --write
+bsprettier "components/**/*.{brs,bs,xml}" --write --progress
 bsprettier "components/**/*.{brs,bs,xml}" --write --verbose
 bsprettier "components/**/*.xml" --rules=xml/script-order,xml/attribute-order --write
 bsprettier --stdin-filepath components/example/Foo.brs < Foo.brs
@@ -34,8 +35,13 @@ bsprettier --stdin-filepath components/example/Foo.brs < Foo.brs
 | `--config <path>` | Explicit config file (otherwise cosmiconfig discovery). |
 | `--stdin-filepath <p>` | Read stdin, write formatted text to stdout. |
 | `--verbose` | Per-rule summary in `--check` output. |
+| `--progress` | Force progress output to stderr, including completed/total work and ETA. |
+| `--no-progress` | Disable automatic progress output. |
 
 `--check`, `--write`, and `--list-different` are mutually exclusive.
+
+Progress is shown automatically when stderr is an interactive terminal. It is
+written to stderr so stdout stays stable for `--check` and `--list-different`.
 
 ## Build Targets
 
