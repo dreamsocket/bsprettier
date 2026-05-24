@@ -70,6 +70,7 @@ export function defaultConfig(): BsprettierConfig {
       insertSpaceBetweenAssociativeArrayLiteralKeyAndColon: false,
       formatSingleLineCommentType: "singlequote",
       formatMultiLineObjectsAndArrays: true,
+      sortImports: true,
     },
   };
 }

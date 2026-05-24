@@ -8,8 +8,9 @@ code is the authority when this document and `bsprettier-plan.md` differ.
 
 - `.brs` and `.bs` files are parsed with BrighterScript before any edit. Files
   with fatal parse diagnostics are left unchanged.
-- `.brs` and `.bs` files run through `brighterscript-formatter` before
-  custom rules unless `formatter` is set to `null`.
+- `.brs` and `.bs` files run through `brighterscript-formatter` before and
+  after custom rules unless `formatter` is set to `null`. When `--rules` is
+  used, the formatter runs only if `brs/format-style` is included.
 - XML files are parsed with `@xml-tools/parser` and edited by source-offset
   splices. XML is never reserialized through a DOM.
 - Rules run in numeric phase order, reparsing between phases.
@@ -47,7 +48,8 @@ The default `brighterscript-formatter` options are:
   "insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces": true,
   "insertSpaceBetweenAssociativeArrayLiteralKeyAndColon": false,
   "formatSingleLineCommentType": "singlequote",
-  "formatMultiLineObjectsAndArrays": true
+  "formatMultiLineObjectsAndArrays": true,
+  "sortImports": true
 }
 ```
 
@@ -198,17 +200,23 @@ Config overrides win:
 Default classification:
 
 - `is*`, `has*`, `can*`, and `should*` names are properties.
-- The final word carrying a tense suffix (`-ed`, `-ing`) is an event unless it
+- Event fields require both an event-like name and evidence that the value is
+  produced by the component.
+- A final word carrying a tense suffix (`-ed`, `-ing`) is event-like unless it
   is in the non-verb denylist.
-- `complete`, `ready`, and `done` count as event words.
-- The component's own script refines ambiguous names: reads indicate inbound
-  properties; write-only usage indicates outbound events.
+- `complete`, `ready`, and `done` count as event-like words.
+- A field is event-backed when a linked script assigns `m.top.<fieldId>` or when
+  the field has an `alias=` attribute. Tense/event-like fields without that
+  backing are properties.
+- Reads of `m.top.<fieldId>` indicate inbound property usage. Assignment
+  statements indicate outbound production. Non-tensed names remain properties
+  even when written.
 - Standalone state participles such as `expanded`, `collapsed`, `checked`,
-  `highlighted`, `hidden`, `pinned`, and `locked` are ambiguous if both read and
-  written.
+  `highlighted`, `hidden`, `pinned`, and `locked` are events when produced and
+  unread, properties when not produced, and ambiguous if both read and written.
 - `enabled`, `disabled`, `selected`, `focused`, and `unfocused` prefer property
   classification even when both read and written.
-- Names with no tense signal and no usage signal default to property.
+- Names with no event-like signal default to property.
 
 An unresolved ambiguous field prevents interface reordering.
 
@@ -222,10 +230,11 @@ m.top.observeFieldScoped("<fieldId>", "_set<FieldIdAsPascalCase>")
 ```
 
 In CLI project mode, when the XML file and target script are both part of the
-same run and the target script has an `init`, the tool can migrate safely:
+same run, the tool can migrate safely:
 
 - Remove the XML `onChange` attribute.
 - Insert a missing `m.top.observeFieldScoped(...)` line at the start of `init`.
+  If the target script has no `init`, create one at the top of the file.
 - Rename the old handler routine, bare calls, and observer handler strings to
   the generated `_set<FieldId>` name when there is no collision and no existing
   observer for the field.
@@ -250,11 +259,14 @@ same run and the target script has an `init`, the tool can migrate safely:
 - In a primary component script, routines not declared in the XML interface are
   private and should be `_`-prefixed, except framework routines such as `init`
   and `onKeyEvent`.
-- Linked non-primary utility scripts are not forced private unless the XML
-  explicitly declares the routine in `<interface>`.
-- Safe private/public routine fixes update declarations, bare calls, observer
-  handler strings, and XML `<function name="...">` entries when no name
-  collision exists.
+- Same-directory component-local linked script routines are private unless they
+  are declared in the XML interface, are framework routines, or use a namespaced
+  global helper form such as `HTTPUtil_addQueryParams`.
+- Scripts linked from outside the component directory are not forced private.
+- Safe private routine fixes update declarations, bare calls, observer handler
+  strings, and sibling-script call sites when no name collision exists.
+- `_`-prefixed XML `<function name="...">` entries are reported but not
+  auto-promoted to public names.
 - `audit/hardcoded-string` flags direct non-empty string literals assigned to
   `.text`; use `ResourceUtil_getString(...)`.
 - `audit/prefer-dreamsocket-utils` flags selected builtin calls and recommends
@@ -297,9 +309,9 @@ same run and the target script has an `init`, the tool can migrate safely:
 }
 ```
 
-Config is discovered from `package.json`, `bsprettier.config.json`,
-`.bsprettierrc.json`, or `.bsprettierrc`. Explicit `--config` paths override
-discovery.
+Config is discovered from `package.json`, `bsprettier.json`,
+`bsprettier.config.json`, `.bsprettierrc.json`, or `.bsprettierrc`. Explicit
+`--config` paths override discovery.
 
 ## Plan Sync Notes
 

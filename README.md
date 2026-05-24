@@ -65,17 +65,18 @@ node dist/bsprettier.cjs "components/**/*.{brs,bs,xml}" --check
 
 - `0` — clean, or `--write` succeeded.
 - `1` — `--check` found formatting changes are needed.
-- `2` — parse error, intra-phase edit conflict, or unsafe-rule abort.
-- `3` — CLI usage error.
+- `2` — parse error, intra-phase edit conflict, write failure, or another
+  formatting error.
+- `3` — CLI usage or config error.
 
 ## Relationship to bsfmt and bslint
 
-`bsprettier` integrates [`brighterscript-formatter`](https://github.com/rokucommunity/brighterscript-formatter) (bsfmt) internally as a pre-processing step. When formatting `.brs` and `.bs` files, `bsprettier` first runs `brighterscript-formatter` to normalize basic layout, spacing, casing, and indentation, then applies its custom AST rules.
+`bsprettier` integrates [`brighterscript-formatter`](https://github.com/rokucommunity/brighterscript-formatter) (bsfmt) internally. When formatting `.brs` and `.bs` files, `bsprettier` runs bsfmt before custom rules to normalize basic layout, spacing, casing, and indentation, then runs it again after custom rules to clean up layout drift from moved declarations. When `--rules` is used, bsfmt runs only if `brs/format-style` is included.
 
 | Concern | Integrated bsfmt | bslint | bsprettier AST rules |
 |---|---|---|---|
-| Indentation, keyword case, trailing ws | **yes** (prior) | no | no |
-| Import sorting (`.bs`) | **yes** (prior) | no | no |
+| Indentation, keyword case, trailing ws | **yes** (pre/post) | no | no |
+| Import sorting (`.bs`) | **yes** (default `sortImports`) | no | no |
 | Condition parentheses (presence) | no | yes (`group`) | no, but depends on it |
 | Condition paren **spacing** `if(` | no | no | **yes** |
 | Inline-if `then` presence | no | yes | no |
@@ -84,14 +85,14 @@ node dist/bsprettier.cjs "components/**/*.{brs,bs,xml}" --check
 | Top-level routine cohort order | no | no | **yes** |
 | Blank-line count between routines | no | no | **yes** |
 | XML script/interface/attribute order | no | no | **yes** |
-| `onChange` field avoidance | no | no | **yes** (diagnostic) |
+| `onChange` field avoidance | no | no | **yes** (diagnostic, project-mode migration) |
 
 ### Formatter Configuration
 
 You can customize `brighterscript-formatter` settings via the `"formatter"` key in `bsprettier.json`. 
 
 #### Default Formatter Options
-`bsprettier` comes pre-configured with the following default rules:
+`bsprettier` comes pre-configured with the following default formatter options:
 ```json
 {
   "formatter": {
@@ -108,7 +109,8 @@ You can customize `brighterscript-formatter` settings via the `"formatter"` key 
     "insertSpaceAfterOpeningAndBeforeClosingNonemptyBraces": true,
     "insertSpaceBetweenAssociativeArrayLiteralKeyAndColon": false,
     "formatSingleLineCommentType": "singlequote",
-    "formatMultiLineObjectsAndArrays": true
+    "formatMultiLineObjectsAndArrays": true,
+    "sortImports": true
   }
 }
 ```
@@ -124,13 +126,18 @@ bslint  --fix
 bsprettier "components/**/*.{brs,bs,xml}" --write
 ```
 
+`.bs`/`.brs` import statements are sorted by the default bsfmt `sortImports`
+option. SceneGraph XML `<script>` tags are sorted separately by
+`xml/script-order`.
+
 ## Rule catalog
 
 ### BRS / BS rules (phase-ordered)
 
 | Rule | Phase | Behavior |
 |---|---|---|
-| `brs/declaration-order` | A | Reorders whole top-level `sub`/`function` declarations into cohorts: `init`, Public, Private, Observer (`_on*` / `onKeyEvent`); ASCII-sorted within a cohort. Banners travel with their routine. Refuses on interleaved namespace/class, multiple `init`, or standalone inter-routine comments. |
+| `brs/format-style` | pre/post | Runs `brighterscript-formatter` unless `formatter` is `null`. Included by default; with `--rules`, include this rule id explicitly to run bsfmt. |
+| `brs/declaration-order` | A | Reorders whole top-level `sub`/`function` declarations into cohorts: `init`, Public, Private, Observer (`_on*` / `onKeyEvent`); ASCII-sorted within a cohort. File headers stay in place and standalone comments between routines travel with the routine below. Refuses on interleaved namespace/class/other top-level declarations or multiple `init` routines. |
 | `brs/declaration-spacing` | B | Enforces exactly `brs.blankLinesBetweenRoutines` (default 3) blank lines between top-level routines and a single trailing newline. |
 | `brs/block-if-form` | C | Converts a single-statement, no-`else` inline `if … then …` into block form. Preserves the condition's paren state byte-for-byte. Skips ambiguous cases. |
 | `brs/if-condition-parens` | D | Enforces the spelling `if(condition)` / `else if(condition)` — no space between keyword and `(`. Only when the condition is already fully parenthesized; otherwise emits an `info` diagnostic. |
@@ -143,20 +150,41 @@ see stale offsets.
 | Rule | Behavior |
 |---|---|
 | `xml/attribute-order` | `id` first (`name` for `<component>` and `<function>`), remaining attributes ASCII-ascending. Preserves quote style and multi-line attribute layout. |
-| `xml/script-order` | Local component script first, remaining `pkg:` scripts ASCII-ascending by `uri`. Refuses if `<script>` elements are not contiguous siblings. |
-| `xml/interface-section-order` | Orders `<interface>` children into Events → Properties → Functions; sorts within a section. Refuses to reorder if any field's Event/Property classification is ambiguous. |
-| `xml/no-onchange-field` | Diagnostic: flags `onChange="…"` on `<field>`, recommends `observeFieldScoped` in `init()`. |
+| `xml/script-order` | Current-directory script URIs first, then all remaining path/protocol URIs; each group sorts ASCII-ascending by full `uri`. Refuses if `<script>` elements are not contiguous siblings or if comments cannot be moved safely. |
+| `xml/interface-section-order` | Orders `<interface>` children into Events → Properties → Functions and sorts within a section. With section-header comments, keeps headers as fixed run boundaries and sorts within each run. Refuses to reorder if any field's Event/Property classification is ambiguous. |
+| `xml/no-onchange-field` | Flags `onChange="…"` on `<field>`, recommends `observeFieldScoped` in `init()`, and in CLI project mode can remove `onChange`, create/extend `init`, and rename old handlers when safe. |
 
-### Audit rules (diagnostics)
+### Audit rules
 
-`audit/handler-intent`, `audit/ui-node-prefix`, `audit/private-member-naming`,
-`audit/hardcoded-string`, `audit/prefer-dreamsocket-utils` — these never
-auto-fix; they report convention issues only.
+| Rule | Behavior |
+|---|---|
+| `audit/handler-intent` | Compatibility no-op. Observer handler names are handled by `audit/private-member-naming`; `_set<Field>` is enforced only during XML `onChange` migration. |
+| `audit/ui-node-prefix` | Component-local `findNode(...)` handles should be `m._ui*`; Animation and Interpolator handles use a private `_` prefix instead. Scene component scripts and scene-level `findNode(...)` receivers are exempt. Safe renames are auto-fixed across sibling component scripts. |
+| `audit/private-member-naming` | Private `m` members should be lowerCamelCase with optional `_`; ALL_CAPS constants keep uppercase and gain `_` if needed. In project mode, component-local routines not declared in the XML interface are private unless framework or namespaced-global helpers. Safe renames update declarations, bare calls, observer strings, and sibling call sites. `_`-prefixed XML interface functions are reported but not auto-promoted. |
+| `audit/hardcoded-string` | Diagnostic-only by default off. Flags direct non-empty string literals assigned to `.text`; use `ResourceUtil_getString(...)`. |
+| `audit/prefer-dreamsocket-utils` | Diagnostic-only by default off. Flags selected builtin calls and recommends Dreamsocket helper namespaces such as `StringUtil_*` and `TypeUtil_*`. |
+
+## XML field classification
+
+`xml/interface-section-order` classifies fields as Events, Properties, or
+ambiguous before sorting:
+
+- Boolean-state names beginning with `is`, `has`, `can`, or `should` are
+  Properties.
+- Events require both an event-like name (`-ed`, `-ing`, `complete`, `ready`,
+  or `done`) and evidence that the field is produced by the component.
+- A field is produced when a linked script assigns `m.top.<fieldId>` or the
+  field has an `alias=` attribute. Event-like fields without that backing are
+  Properties.
+- Non-tensed names remain Properties even when written.
+- Standalone state participles such as `expanded` can be ambiguous when both
+  read and written; resolve those with `xml.fieldClassificationOverrides`.
 
 ## Configuration
 
-Discovered via cosmiconfig: `bsprettier.json`, `bsprettier.config.json`,
-`.bsprettierrc.json`, `.bsprettierrc`, or a `bsprettier` key in `package.json`. See
+Discovered via cosmiconfig: a `bsprettier` key in `package.json`,
+`bsprettier.json`, `bsprettier.config.json`, `.bsprettierrc.json`, or
+`.bsprettierrc`. See
 [`bsprettier.schema.json`](./bsprettier.schema.json) for the full shape.
 
 ```json
@@ -181,8 +209,10 @@ Discovered via cosmiconfig: `bsprettier.json`, `bsprettier.config.json`,
 }
 ```
 
-Severity: `error` fails `--check` and applies fixes; `warn` reports but does not
-fail `--check`, applies safe fixes; `info` is diagnostic-only; `off` disables.
+Severity: `error` and `warn` both report diagnostics and apply safe fixes.
+`--check` fails when output would change or a parse/conflict error occurs;
+diagnostic-only messages do not currently change the exit status. `info` is
+diagnostic-only, and `off` disables a rule.
 
 ### Inline suppression
 

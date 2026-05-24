@@ -32,6 +32,27 @@ describe("formatter integration", () => {
     expect(result.output).toBe("SUB main()\n  PRINT \"hello\"\nEND SUB\n");
   });
 
+  it("sorts imports by default", () => {
+    const config = defaultConfig();
+    const src =
+      'import "pkg:/source/z.bs"\n' +
+      'import "pkg:/source/a.bs"\n' +
+      "\n" +
+      "sub main()\n" +
+      "end sub\n";
+    const result = formatFile({ filePath: "main.bs", source: src, config });
+
+    expect(result.changed).toBe(true);
+    expect(result.ruleIds).toContain("brs/format-style");
+    expect(result.output).toBe(
+      'import "pkg:/source/a.bs"\n' +
+        'import "pkg:/source/z.bs"\n' +
+        "\n" +
+        "sub main()\n" +
+        "end sub\n",
+    );
+  });
+
   it("does not format when formatter is disabled (set to null)", () => {
     const baseConfig = defaultConfig();
     const config = {
