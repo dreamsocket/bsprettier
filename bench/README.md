@@ -47,20 +47,22 @@ numbers track reality.
 
 Indicative only — absolute numbers vary by machine. The **ratios** are the point.
 
-| metric          | before parse-reuse | after parse-reuse |
-| --------------- | ------------------ | ----------------- |
-| format share    | ~92% of total      | ~88% of total     |
-| parse / format  | ~37%               | ~33%              |
-| total parses    | 9900               | 6300              |
-| parses / file   | ~8.3               | ~5.3              |
+| metric          | before parse-reuse | after parse-reuse | after phase cleanup |
+| --------------- | ------------------ | ----------------- | ------------------- |
+| format share    | ~92% of total      | ~88% of total     | ~85% of total       |
+| parse / format  | ~37%               | ~33%              | ~30%                |
+| total parses    | 9900               | 6300              | 5700                |
+| parses / file   | ~8.3               | ~5.3              | 4.75                |
 
 `formatBrs`/`formatXml` keep a single parse in sync with the working text and
-reparse only after a real mutation (pre-format, applyEdits, post-format), so
-unchanged phases and the old duplicate "initial" parse are eliminated. This cut
-total parses ~36% (BRS −31%, XML −57%) for a ~7–9% format-phase win.
+reparse only after a real mutation, so unchanged phases and the old duplicate
+"initial" parse are eliminated. BRS formatting now runs once at the end of the
+pipeline, and declaration reordering applies the configured routine spacing in
+the same edit. Together these cuts reduce total parses ~42% from the original
+baseline.
 
-What's left in `format` is mostly the brighterscript-formatter pre/post passes
-and rule logic, plus the *necessary* reparses after genuine mutations. Going
+What's left in `format` is mostly the brighterscript-formatter final pass and
+rule logic, plus the *necessary* reparses after genuine mutations. Going
 further means incremental reparsing or rules emitting AST deltas — bigger
 architectural changes with diminishing returns; re-measure here before attempting
 them.

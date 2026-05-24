@@ -9,6 +9,8 @@ import { applyEdits, findConflict, isNoOpEdit } from "./apply.js";
 import { buildSuppressionMap, isSuppressed } from "./suppression.js";
 import type { Diagnostic, Edit, Severity } from "./types.js";
 
+const formatterCache = new WeakMap<NonNullable<BsprettierConfig["formatter"]>, Formatter>();
+
 export type FileStatus = "unchanged" | "changed" | "parse-error" | "conflict";
 
 export interface FormatFileResult {
@@ -67,18 +69,24 @@ function phasesOf<R extends { phase: number }>(rules: ActiveRule<R>[]): number[]
 }
 
 /**
- * Run brighterscript-formatter (bsfmt) when configured. Used both as a
- * pre-processing pass (clean input for our AST rules) and as a final pass (fix
- * indentation drift introduced when our rules move whole declarations around).
+ * Run brighterscript-formatter (bsfmt) when configured. The formatter is kept
+ * as the final BRS pass so AST rules run once on the original parse and bsfmt
+ * fixes any indentation drift after rule edits land.
  */
 function runFormatter(
   text: string,
   config: BsprettierConfig,
   diagnostics: Diagnostic[],
 ): string {
-  if (config.formatter === null || config.formatter === undefined) return text;
+  const options = config.formatter;
+  if (options === null || options === undefined) return text;
   try {
-    return new Formatter().format(text, config.formatter);
+    let formatter = formatterCache.get(options);
+    if (!formatter) {
+      formatter = new Formatter(options);
+      formatterCache.set(options, formatter);
+    }
+    return formatter.format(text);
   } catch (e: any) {
     diagnostics.push({
       ruleId: "brs/format-style",
@@ -178,38 +186,31 @@ function formatBrs(
 
   let current = source;
   // `currentParse` and `currentSuppression` are kept in sync with `current`:
-  // recomputed only after a real mutation (pre-format, applyEdits, post-format)
-  // so unchanged phases reuse them instead of reparsing identical text.
+  // recomputed only after a real mutation, so unchanged phases reuse them
+  // instead of reparsing identical text.
   let currentParse = originalParse;
   let currentSuppression = suppressionCheck;
 
-  // Pre-processing pass: clean input so our AST rules see well-formed source.
-  if (shouldRunFormatter(onlyRules)) {
-    const preFormatted = runFormatter(current, config, diagnostics);
-    if (preFormatted !== current) {
-      current = preFormatted;
-      currentParse = parseBrs(current, filePath);
-      currentSuppression = buildSuppressionMap(current, "brs");
-      appliedRuleIds.add("brs/format-style");
-    }
-  }
-
-  if (currentParse.fatal) {
-    return {
-      filePath,
-      status: "parse-error",
-      output: source,
-      changed: false,
-      diagnostics,
-      ruleIds: [],
-      errorMessage: currentParse.diagnostics
-        .filter((d) => d.severity === 1)
-        .map((d) => d.message)
-        .join("; "),
-    };
-  }
-
   if (active.length === 0) {
+    if (shouldRunFormatter(onlyRules)) {
+      const formatted = runFormatter(current, config, diagnostics);
+      if (formatted !== current) {
+        current = formatted;
+        currentParse = parseBrs(current, filePath);
+        appliedRuleIds.add("brs/format-style");
+        if (currentParse.fatal) {
+          return {
+            filePath,
+            status: "parse-error",
+            output: source,
+            changed: false,
+            diagnostics,
+            ruleIds: [],
+            errorMessage: "formatted output no longer parses; file left untouched",
+          };
+        }
+      }
+    }
     const changed = current !== source;
     return {
       filePath,

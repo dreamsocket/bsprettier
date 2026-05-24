@@ -1,4 +1,3 @@
-import { Lexer } from "brighterscript/dist/lexer/Lexer.js";
 import { emptyResult, type RuleResult } from "../../edit/types.js";
 import type { Edit } from "../../edit/types.js";
 import { walkElements } from "../../parser/xml.js";
@@ -83,17 +82,14 @@ function routineRenameEdits(
   ctx: BrsRuleContext,
   renames: Map<string, string>,
 ): Edit[] {
-  const lex = Lexer.scan(ctx.source);
-  if (lex.diagnostics.length > 0) return [];
-
   const edits: Edit[] = observerHandlerStringEdits(ctx.source, renames);
-  for (let i = 0; i < lex.tokens.length; i++) {
-    const token = lex.tokens[i] as BscToken;
+  for (let i = 0; i < ctx.parse.tokens.length; i++) {
+    const token = ctx.parse.tokens[i]!;
     const replacement = renames.get(token.text.toLowerCase());
     if (!replacement || token.kind !== "Identifier" || !token.location) continue;
 
-    const previous = previousToken(lex.tokens as BscToken[], i);
-    const next = nextToken(lex.tokens as BscToken[], i);
+    const previous = previousToken(ctx.parse.tokens, i);
+    const next = nextToken(ctx.parse.tokens, i);
     const isDeclaration =
       previous?.kind === "Function" || previous?.kind === "Sub";
     const isBareCall = previous?.kind !== "Dot" && next?.kind === "LeftParen";
@@ -289,10 +285,8 @@ function memberRenameEdits(
   renames: Map<string, string>,
 ): Edit[] {
   if (renames.size === 0) return [];
-  const lex = Lexer.scan(ctx.source);
-  if (lex.diagnostics.length > 0) return [];
 
-  const sig = (lex.tokens as BscToken[]).filter(
+  const sig = ctx.parse.tokens.filter(
     (t) => t.kind !== "Newline" && t.kind !== "Comment",
   );
   const edits: Edit[] = [];

@@ -135,6 +135,7 @@ export class ProjectContext {
   readonly sourceByAbs = new Map<string, string>();
   readonly xmlFiles: ProjectXmlFile[] = [];
   readonly componentsByName = new Map<string, ProjectXmlFile>();
+  private readonly componentsByReferencedScript = new Map<string, ProjectXmlFile[]>();
   private readonly brsParseCache = new Map<string, BrsParseResult | null>();
   private readonly publicNamesCache = new Map<string, Set<string>>();
 
@@ -147,6 +148,14 @@ export class ProjectContext {
       this.xmlFiles.push(xml);
       if (xml.componentName) {
         this.componentsByName.set(xml.componentName.toLowerCase(), xml);
+      }
+      for (const scriptPath of xml.referencedScripts) {
+        const existing = this.componentsByReferencedScript.get(scriptPath);
+        if (existing) {
+          existing.push(xml);
+        } else {
+          this.componentsByReferencedScript.set(scriptPath, [xml]);
+        }
       }
     }
   }
@@ -170,7 +179,7 @@ export class ProjectContext {
 
   componentsReferencingFile(filePath: string): ProjectXmlFile[] {
     const abs = absolutePath(filePath);
-    return this.xmlFiles.filter((xml) => xml.referencedScripts.includes(abs));
+    return this.componentsByReferencedScript.get(abs) ?? [];
   }
 
   isSceneScript(filePath: string): boolean {

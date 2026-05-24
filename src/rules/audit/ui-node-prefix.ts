@@ -1,4 +1,3 @@
-import { Lexer } from "brighterscript/dist/lexer/Lexer.js";
 import {
   emptyResult,
   type Diagnostic,
@@ -152,9 +151,7 @@ function memberRenameEdits(
   ctx: BrsRuleContext,
   renames: Map<string, string>,
 ): Edit[] {
-  const lex = Lexer.scan(ctx.source);
-  if (lex.diagnostics.length > 0) return [];
-  const sig = (lex.tokens as BscToken[]).filter(
+  const sig = ctx.parse.tokens.filter(
     (t) => t.kind !== "Newline" && t.kind !== "Comment",
   );
   const edits: Edit[] = [];

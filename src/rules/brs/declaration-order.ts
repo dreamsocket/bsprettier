@@ -117,6 +117,9 @@ export const declarationOrder: BrsRule = {
     }
 
     const eol = detectEol(source);
+    const routineSeparator = eol.repeat(
+      Math.max(0, ctx.config.brs.blankLinesBetweenRoutines) + 1,
+    );
     const regionStart = blockStart.get(routines[0]!)!;
     const lastOriginal = routines[routines.length - 1]!;
     const regionEnd = lastOriginal.fullSpan.offset + lastOriginal.fullSpan.length;
@@ -125,7 +128,7 @@ export const declarationOrder: BrsRule = {
       .map((r) =>
         source.slice(blockStart.get(r)!, r.fullSpan.offset + r.fullSpan.length),
       )
-      .join(eol + eol);
+      .join(routineSeparator);
 
     const edit: Edit = {
       ruleId: RULE_ID,
