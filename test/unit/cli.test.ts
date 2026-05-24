@@ -18,6 +18,32 @@ afterEach(() => {
 });
 
 describe("cli discovery", () => {
+  it.sequential("reports mutually exclusive modes as a usage error", async () => {
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    await expect(main(["components/**/*.brs", "--check", "--write"])).resolves.toBe(3);
+
+    expect(stderr.mock.calls.map(([chunk]) => String(chunk)).join("")).toContain(
+      "mutually exclusive",
+    );
+  });
+
+  it.sequential("reports unknown rule ids as a usage error", async () => {
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    await expect(
+      main(["components/**/*.brs", "--rules=brs/not-real", "--check"]),
+    ).resolves.toBe(3);
+
+    expect(stderr.mock.calls.map(([chunk]) => String(chunk)).join("")).toContain(
+      "unknown rule id",
+    );
+  });
+
   it.sequential("prints forced progress to stderr without polluting list output", async () => {
     const root = mkdtempSync(join(tmpdir(), "bsprettier-cli-"));
     const components = join(root, "components");
@@ -86,6 +112,54 @@ describe("cli discovery", () => {
       ).resolves.toBe(1);
       expect(stdout.mock.calls.map(([chunk]) => String(chunk)).join("")).toContain(
         "../target/components/NeedsFormat.brs",
+      );
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it.sequential("formats stdin using the provided stdin filepath", async () => {
+    const stdin = process.stdin as NodeJS.ReadStream & AsyncIterable<Buffer>;
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    vi.spyOn(stdin, Symbol.asyncIterator).mockImplementation(async function* () {
+      yield Buffer.from("sub init()\n    if (m.x) then m.y = 1\nend sub\n");
+    });
+
+    await expect(
+      main(["--stdin-filepath", "components/Widget.brs"]),
+    ).resolves.toBe(0);
+
+    const output = stdout.mock.calls.map(([chunk]) => String(chunk)).join("");
+    expect(output).toContain("if(m.x)");
+    expect(output).toContain("end if");
+  });
+
+  it.sequential("reports invalid config instead of silently using defaults", async () => {
+    const root = mkdtempSync(join(tmpdir(), "bsprettier-cli-"));
+    const components = join(root, "components");
+
+    mkdirSync(components, { recursive: true });
+    writeFileSync(join(root, ".bsprettierrc"), "{ nope", "utf8");
+    writeFileSync(join(components, "Widget.brs"), "sub init()\nend sub\n", "utf8");
+
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+
+    try {
+      process.chdir(root);
+
+      await expect(
+        main(["components/**/*.brs", "--check"]),
+      ).resolves.toBe(3);
+
+      expect(stderr.mock.calls.map(([chunk]) => String(chunk)).join("")).toContain(
+        "config",
       );
     } finally {
       process.chdir(originalCwd);

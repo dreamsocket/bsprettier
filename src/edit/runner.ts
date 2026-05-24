@@ -87,6 +87,10 @@ function runFormatter(
   }
 }
 
+function shouldRunFormatter(onlyRules: Set<string> | undefined): boolean {
+  return !onlyRules || onlyRules.has("brs/format-style");
+}
+
 /**
  * Drop fixable diagnostics whose fix is actually applied this phase. A fixable
  * diagnostic is redundant once its edit lands in the output — the change itself
@@ -168,10 +172,12 @@ function formatBrs(
   let current = source;
 
   // Pre-processing pass: clean input so our AST rules see well-formed source.
-  const preFormatted = runFormatter(current, config, diagnostics);
-  if (preFormatted !== current) {
-    current = preFormatted;
-    appliedRuleIds.add("brs/format-style");
+  if (shouldRunFormatter(onlyRules)) {
+    const preFormatted = runFormatter(current, config, diagnostics);
+    if (preFormatted !== current) {
+      current = preFormatted;
+      appliedRuleIds.add("brs/format-style");
+    }
   }
 
   const initial =
@@ -270,10 +276,12 @@ function formatBrs(
   // when our rules relocated whole declarations (e.g. a routine moved together
   // with its leading comment). bsfmt is idempotent and preserves our `if(`
   // spelling, so it only cleans up the layout.
-  const postFormatted = runFormatter(current, config, diagnostics);
-  if (postFormatted !== current) {
-    current = postFormatted;
-    appliedRuleIds.add("brs/format-style");
+  if (shouldRunFormatter(onlyRules)) {
+    const postFormatted = runFormatter(current, config, diagnostics);
+    if (postFormatted !== current) {
+      current = postFormatted;
+      appliedRuleIds.add("brs/format-style");
+    }
   }
 
   const finalParse = parseBrs(current, filePath);

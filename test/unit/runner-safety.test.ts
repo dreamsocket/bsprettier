@@ -20,6 +20,38 @@ describe("runner safety", () => {
     expect(result.output).toBe(src);
   });
 
+  it("honors a rule-specific BrightScript disable-next-line comment", () => {
+    const src =
+      "sub init()\n" +
+      "    ' bsprettier-disable-next-line brs/block-if-form\n" +
+      "    if (m.x) then m.y = 1\n" +
+      "    if (m.z) then m.y = 2\n" +
+      "end sub\n";
+    const result = formatFile({ filePath: "DisabledNext.brs", source: src, config });
+
+    expect(result.output).toContain("    if(m.x) then m.y = 1");
+    expect(result.output).toContain("    if(m.z)\n        m.y = 2\n    end if");
+  });
+
+  it("honors an XML disable-next-line comment", () => {
+    const src =
+      '<component name="W" extends="Group">\n' +
+      "  <interface>\n" +
+      "    <!-- bsprettier-disable-next-line xml/no-onchange-field -->\n" +
+      '    <field id="focusedChild" type="node" onChange="_focusNav" />\n' +
+      "  </interface>\n" +
+      "</component>\n";
+    const result = formatFile({
+      filePath: "W.xml",
+      source: src,
+      config,
+      onlyRules: new Set(["xml/no-onchange-field"]),
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.changed).toBe(false);
+  });
+
   it("respects --rules style restriction via onlyRules", () => {
     const src = "sub init()\n    if (m.x) then m.y = 1\nend sub\n";
     const result = formatFile({
@@ -31,6 +63,36 @@ describe("runner safety", () => {
     // block-if-form is excluded, so the inline-if stays inline; only the
     // keyword/paren spacing is normalized.
     expect(result.output).toContain("if(m.x) then");
+    expect(result.output).not.toContain("end if");
+  });
+
+  it("does not run brighterscript-formatter unless brs/format-style is selected", () => {
+    const src = "SUB init()\n    if (m.x) then m.y = 1\nEND SUB\n";
+    const result = formatFile({
+      filePath: "Selected.brs",
+      source: src,
+      config,
+      onlyRules: new Set(["brs/if-condition-parens"]),
+    });
+
+    expect(result.ruleIds).not.toContain("brs/format-style");
+    expect(result.output).toContain("SUB init()");
+    expect(result.output).toContain("if(m.x) then");
+    expect(result.output).toContain("END SUB");
+  });
+
+  it("runs only brs/format-style when selected explicitly", () => {
+    const src = "SUB init()\n    if (m.x) then m.y = 1\nEND SUB\n";
+    const result = formatFile({
+      filePath: "Selected.brs",
+      source: src,
+      config,
+      onlyRules: new Set(["brs/format-style"]),
+    });
+
+    expect(result.ruleIds).toEqual(["brs/format-style"]);
+    expect(result.output).toContain("sub init()");
+    expect(result.output).toContain("if (m.x) then m.y = 1");
     expect(result.output).not.toContain("end if");
   });
 
@@ -49,6 +111,46 @@ describe("runner safety", () => {
     expect(result.diagnostics.some((d) => d.ruleId === "brs/block-if-form")).toBe(
       true,
     );
+  });
+
+  it("refuses declaration reordering when routines are interleaved with other top-level declarations", () => {
+    const src =
+      "sub zzz()\n" +
+      "end sub\n\n" +
+      "namespace Example\n" +
+      "end namespace\n\n" +
+      "sub init()\n" +
+      "end sub\n";
+    const result = formatFile({
+      filePath: "Interleaved.bs",
+      source: src,
+      config,
+      onlyRules: new Set(["brs/declaration-order"]),
+    });
+
+    expect(result.changed).toBe(false);
+    expect(result.output).toBe(src);
+    expect(result.diagnostics[0]?.message).toContain("interleaved");
+  });
+
+  it("refuses declaration reordering when multiple init routines exist", () => {
+    const src =
+      "sub zzz()\n" +
+      "end sub\n\n" +
+      "sub init()\n" +
+      "end sub\n\n" +
+      "sub init()\n" +
+      "end sub\n";
+    const result = formatFile({
+      filePath: "MultipleInit.brs",
+      source: src,
+      config,
+      onlyRules: new Set(["brs/declaration-order"]),
+    });
+
+    expect(result.changed).toBe(false);
+    expect(result.output).toBe(src);
+    expect(result.diagnostics[0]?.message).toContain("Multiple init");
   });
 
   it("does not reorder interface members when comments sit between them", () => {
@@ -227,6 +329,40 @@ describe("runner safety", () => {
     expect(cfg).toBeLessThan(loaded);
   });
 
+  it("uses configured XML field classification overrides", () => {
+    const baseConfig = defaultConfig();
+    const overrideConfig = {
+      ...baseConfig,
+      xml: {
+        ...baseConfig.xml,
+        fieldClassificationOverrides: {
+          "components/Foo.xml": {
+            dismissed: "property" as const,
+          },
+        },
+      },
+    };
+    const src =
+      '<component name="Foo" extends="Group">\n' +
+      "  <interface>\n" +
+      '    <field id="title" type="string" />\n' +
+      '    <field id="dismissed" type="boolean" />\n' +
+      "  </interface>\n" +
+      "</component>\n";
+
+    const result = formatFile({
+      filePath: "components/Foo.xml",
+      source: src,
+      config: overrideConfig,
+      onlyRules: new Set(["xml/interface-section-order"]),
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.output.indexOf('id="dismissed"')).toBeLessThan(
+      result.output.indexOf('id="title"'),
+    );
+  });
+
   it("does not flag private helpers unless they are m.top observer callbacks", () => {
     const src =
       "sub init()\n" +
@@ -261,6 +397,54 @@ describe("runner safety", () => {
       '    m.top.observeFieldScoped("focusedChild", "_focusNav")',
     );
     expect(result.output).toContain("sub _focusNav()");
+  });
+
+  it("reports direct user-facing string assignments when the audit rule is enabled", () => {
+    const src =
+      "sub init()\n" +
+      '    m._uiTitle.text = "Play"\n' +
+      "end sub\n";
+    const auditConfig = {
+      ...config,
+      rules: { ...config.rules, "audit/hardcoded-string": "warn" as const },
+    };
+    const result = formatFile({
+      filePath: "Strings.brs",
+      source: src,
+      config: auditConfig,
+      onlyRules: new Set(["audit/hardcoded-string"]),
+    });
+
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]!.message).toContain("ResourceUtil_getString");
+  });
+
+  it("reports builtin calls when the Dreamsocket utility audit rule is enabled", () => {
+    const src =
+      "sub init()\n" +
+      '    upper = UCase("title")\n' +
+      "    kind = Type(m.top)\n" +
+      "end sub\n";
+    const auditConfig = {
+      ...config,
+      rules: {
+        ...config.rules,
+        "audit/prefer-dreamsocket-utils": "warn" as const,
+      },
+    };
+    const result = formatFile({
+      filePath: "Utils.brs",
+      source: src,
+      config: auditConfig,
+      onlyRules: new Set(["audit/prefer-dreamsocket-utils"]),
+    });
+
+    expect(result.diagnostics.map((d) => d.message).join("\n")).toContain(
+      "StringUtil_*",
+    );
+    expect(result.diagnostics.map((d) => d.message).join("\n")).toContain(
+      "TypeUtil_*",
+    );
   });
 
   it("accepts _set prefixes for m.top observeField callbacks", () => {

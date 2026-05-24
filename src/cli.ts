@@ -260,6 +260,10 @@ function shouldRunOnChangeMigration(
   return setting !== "off" && setting !== "info";
 }
 
+function configErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export async function main(argv: string[]): Promise<number> {
   const parsed = parseArgs(argv);
   if ("usageError" in parsed) {
@@ -276,10 +280,18 @@ export async function main(argv: string[]): Promise<number> {
 
   // Stdin mode.
   if (args.stdinFilepath) {
-    const config = loadConfig({
-      configPath: args.configPath,
-      searchFrom: resolve(cwd, args.stdinFilepath),
-    });
+    let config: BsprettierConfig;
+    try {
+      config = loadConfig({
+        configPath: args.configPath,
+        searchFrom: resolve(cwd, args.stdinFilepath),
+      });
+    } catch (err) {
+      process.stderr.write(
+        `${pc.red("error")}: config error: ${configErrorMessage(err)}\n`,
+      );
+      return 3;
+    }
     const source = await readStdin();
     const result = formatFile({
       filePath: args.stdinFilepath,
@@ -303,7 +315,15 @@ export async function main(argv: string[]): Promise<number> {
     return 3;
   }
 
-  const config = loadConfig({ configPath: args.configPath, searchFrom: cwd });
+  let config: BsprettierConfig;
+  try {
+    config = loadConfig({ configPath: args.configPath, searchFrom: cwd });
+  } catch (err) {
+    process.stderr.write(
+      `${pc.red("error")}: config error: ${configErrorMessage(err)}\n`,
+    );
+    return 3;
+  }
   const files = discoverFiles(args.globs, config, cwd);
 
   if (files.length === 0) {

@@ -9,19 +9,19 @@ export interface ConflictError {
 
 /**
  * Apply a set of edits to `source`. Edits must not overlap (callers detect
- * intra-phase conflicts first). Edits are applied highest-offset → lowest so
- * earlier offsets stay valid.
+ * intra-phase conflicts first). Edits are stitched in one pass so large rename
+ * batches do not repeatedly rebuild the full source string.
  */
 export function applyEdits(source: string, edits: Edit[]): string {
-  const sorted = [...edits].sort((a, b) => b.offset - a.offset);
-  let result = source;
+  const sorted = [...edits].sort((a, b) => a.offset - b.offset);
+  const parts: string[] = [];
+  let cursor = 0;
   for (const edit of sorted) {
-    result =
-      result.slice(0, edit.offset) +
-      edit.replacement +
-      result.slice(edit.offset + edit.length);
+    parts.push(source.slice(cursor, edit.offset), edit.replacement);
+    cursor = edit.offset + edit.length;
   }
-  return result;
+  parts.push(source.slice(cursor));
+  return parts.join("");
 }
 
 /**

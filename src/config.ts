@@ -115,14 +115,10 @@ export function loadConfig(opts: LoadConfigOptions = {}): BsprettierConfig {
     ],
   });
   const base = defaultConfig();
-  try {
-    const result = opts.configPath
-      ? explorer.load(opts.configPath)
-      : explorer.search(opts.searchFrom);
-    return mergeConfig(base, result?.config as Partial<BsprettierConfig>);
-  } catch {
-    return base;
-  }
+  const result = opts.configPath
+    ? explorer.load(opts.configPath)
+    : explorer.search(opts.searchFrom);
+  return mergeConfig(base, result?.config as Partial<BsprettierConfig>);
 }
 
 export function ruleSetting(
