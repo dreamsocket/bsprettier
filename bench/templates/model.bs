@@ -1,0 +1,26 @@
+' BrighterScript model for __NAME__
+function createModel__NAME__(seed as integer) as object
+    state = { total: 0, entries: [] }
+    for i = 0 to seed
+        if i mod 2 = 0 then state.total += i
+        state.entries.push({ index: i, even: i mod 2 = 0 })
+    end for
+    return state
+end function
+
+' Reduces entries to a single accumulated value.
+function reduceEntries__NAME__(entries as object) as integer
+    acc = 0
+    for each entry in entries
+        if entry.even = true
+            acc += entry.index
+        end if
+    end for
+    return acc
+end function
+
+sub applyModel__NAME__(node as object, model as object)
+    if node = invalid then return
+    node.total = model.total
+    node.size = model.entries.count()
+end sub

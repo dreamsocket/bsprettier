@@ -177,19 +177,24 @@ function formatBrs(
   }
 
   let current = source;
+  // `currentParse` and `currentSuppression` are kept in sync with `current`:
+  // recomputed only after a real mutation (pre-format, applyEdits, post-format)
+  // so unchanged phases reuse them instead of reparsing identical text.
+  let currentParse = originalParse;
+  let currentSuppression = suppressionCheck;
 
   // Pre-processing pass: clean input so our AST rules see well-formed source.
   if (shouldRunFormatter(onlyRules)) {
     const preFormatted = runFormatter(current, config, diagnostics);
     if (preFormatted !== current) {
       current = preFormatted;
+      currentParse = parseBrs(current, filePath);
+      currentSuppression = buildSuppressionMap(current, "brs");
       appliedRuleIds.add("brs/format-style");
     }
   }
 
-  const initial =
-    current === source ? originalParse : parseBrs(current, filePath);
-  if (initial.fatal) {
+  if (currentParse.fatal) {
     return {
       filePath,
       status: "parse-error",
@@ -197,7 +202,7 @@ function formatBrs(
       changed: false,
       diagnostics,
       ruleIds: [],
-      errorMessage: initial.diagnostics
+      errorMessage: currentParse.diagnostics
         .filter((d) => d.severity === 1)
         .map((d) => d.message)
         .join("; "),
@@ -217,22 +222,11 @@ function formatBrs(
   }
 
   for (const phase of phasesOf(active)) {
-    const suppression = buildSuppressionMap(current, "brs");
-    if (suppression.fileDisabled) {
+    if (currentSuppression.fileDisabled) {
       return unchanged(filePath, source, diagnostics);
     }
-    const parse = parseBrs(current, filePath);
-    if (parse.fatal) {
-      return {
-        filePath,
-        status: "parse-error",
-        output: source,
-        changed: false,
-        diagnostics,
-        ruleIds: [],
-        errorMessage: "file no longer parses after an intermediate phase",
-      };
-    }
+    const suppression = currentSuppression;
+    const parse = currentParse;
     const phaseEdits: Edit[] = [];
     const phaseDiags: Diagnostic[] = [];
     for (const { rule, severity } of active) {
@@ -276,6 +270,19 @@ function formatBrs(
     if (phaseEdits.length > 0) {
       for (const e of phaseEdits) appliedRuleIds.add(e.ruleId);
       current = applyEdits(current, phaseEdits);
+      currentParse = parseBrs(current, filePath);
+      if (currentParse.fatal) {
+        return {
+          filePath,
+          status: "parse-error",
+          output: source,
+          changed: false,
+          diagnostics,
+          ruleIds: [],
+          errorMessage: "file no longer parses after an intermediate phase",
+        };
+      }
+      currentSuppression = buildSuppressionMap(current, "brs");
     }
     diagnostics.push(...reportableDiagnostics(phaseDiags, phaseEdits));
   }
@@ -288,12 +295,14 @@ function formatBrs(
     const postFormatted = runFormatter(current, config, diagnostics);
     if (postFormatted !== current) {
       current = postFormatted;
+      currentParse = parseBrs(current, filePath);
       appliedRuleIds.add("brs/format-style");
     }
   }
 
-  const finalParse = parseBrs(current, filePath);
-  if (finalParse.fatal) {
+  // `currentParse` already reflects the final `current` (reparsed after the last
+  // mutation), so this is the post-format safety check without a fresh parse.
+  if (currentParse.fatal) {
     return {
       filePath,
       status: "parse-error",
@@ -340,26 +349,19 @@ function formatXml(
   if (active.length === 0) return unchanged(filePath, source, []);
 
   let current = source;
+  // Kept in sync with `current`; XML has no pre/post formatter pass, so the only
+  // mutation point is applyEdits, after which we reparse. Unchanged phases reuse.
+  let currentParse = initial;
+  let currentSuppression = buildSuppressionMap(current, "xml");
   const diagnostics: Diagnostic[] = [];
   const appliedRuleIds = new Set<string>();
 
   for (const phase of phasesOf(active)) {
-    const suppression = buildSuppressionMap(current, "xml");
-    if (suppression.fileDisabled) {
+    if (currentSuppression.fileDisabled) {
       return unchanged(filePath, source, diagnostics);
     }
-    const parse = parseXml(current);
-    if (parse.fatal) {
-      return {
-        filePath,
-        status: "parse-error",
-        output: source,
-        changed: false,
-        diagnostics,
-        ruleIds: [],
-        errorMessage: "file no longer parses after an intermediate phase",
-      };
-    }
+    const suppression = currentSuppression;
+    const parse = currentParse;
     const phaseEdits: Edit[] = [];
     const phaseDiags: Diagnostic[] = [];
     for (const { rule, severity } of active) {
@@ -403,21 +405,21 @@ function formatXml(
     if (phaseEdits.length > 0) {
       for (const e of phaseEdits) appliedRuleIds.add(e.ruleId);
       current = applyEdits(current, phaseEdits);
+      currentParse = parseXml(current);
+      if (currentParse.fatal) {
+        return {
+          filePath,
+          status: "parse-error",
+          output: source,
+          changed: false,
+          diagnostics,
+          ruleIds: [],
+          errorMessage: "formatted output no longer parses; file left untouched",
+        };
+      }
+      currentSuppression = buildSuppressionMap(current, "xml");
     }
     diagnostics.push(...reportableDiagnostics(phaseDiags, phaseEdits));
-  }
-
-  const finalParse = parseXml(current);
-  if (finalParse.fatal) {
-    return {
-      filePath,
-      status: "parse-error",
-      output: source,
-      changed: false,
-      diagnostics,
-      ruleIds: [],
-      errorMessage: "formatted output no longer parses; file left untouched",
-    };
   }
 
   const changed = current !== source;

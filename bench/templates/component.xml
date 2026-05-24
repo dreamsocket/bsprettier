@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<component extends="Group" name="__NAME__">
+  <interface>
+    <field id="config" type="assocarray" />
+    <function name="refresh" />
+    <field id="title" onChange="onTitleChange__NAME__" type="string" />
+    <field id="count" type="integer" value="0" />
+    <function name="reset" />
+  </interface>
+  <script uri="pkg:/components/__NAME__/handlers.brs" type="text/brightscript" />
+  <script type="text/brightscript" uri="pkg:/components/__NAME__/util.brs" />
+  <children>
+    <Label text="hello" id="title__NAME__" />
+    <Group id="row__NAME__">
+      <Poster uri="pkg:/images/__NAME__.png" width="100" />
+    </Group>
+  </children>
+</component>
