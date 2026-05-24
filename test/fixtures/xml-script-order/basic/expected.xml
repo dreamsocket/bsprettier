@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <component name="Widget" extends="Group">
-  <script type="text/brightscript" uri="Widget.brs" />
+  <script type="text/brightscript" uri="input.brs" />
+  <script type="text/brightscript" uri="ALocal.brs" />
+
   <script type="text/brightscript" uri="pkg:/source/ahelper.brs" />
   <script type="text/brightscript" uri="pkg:/source/zhelper.brs" />
 </component>

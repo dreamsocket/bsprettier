@@ -39,6 +39,7 @@ const DEFAULT_RULES: Record<string, RuleSetting> = {
   "xml/interface-section-order": "error",
   "xml/no-onchange-field": "warn",
   "audit/handler-intent": "warn",
+  "audit/parameter-naming": "warn",
   "audit/ui-node-prefix": "warn",
   "audit/private-member-naming": "warn",
   "audit/prefer-dreamsocket-utils": "off",

@@ -24,26 +24,57 @@ export const ifConditionParens: BrsRule = {
       const condition = node.condition;
       if (!ifToken?.location || !condition?.location) continue;
 
-      // Only normalize spacing when the condition is already fully
-      // parenthesized — adding parens is bslint's job (condition-style: group).
+      const ifEnd = lineIndex.positionToOffset(ifToken.location.range.end);
+
       if (condition.kind !== "GroupingExpression") {
-        diagnostics.push({
-          ruleId: RULE_ID,
-          severity: "info",
-          message:
-            "if/while condition is not parenthesized; bsprettier only " +
-            "normalizes spacing. Run bslint --fix (condition-style: group) " +
-            "to add parentheses.",
-          span: lineIndex.rangeToSpan(node.location.range),
-          fixable: false,
-        });
+        const conditionSpan = lineIndex.rangeToSpan(condition.location.range);
+        const conditionStart = conditionSpan.offset;
+        const conditionEnd = conditionSpan.offset + conditionSpan.length;
+        if (conditionStart <= ifEnd) continue;
+
+        const conditionText = source.slice(conditionStart, conditionEnd);
+        if (/[\r\n]/.test(conditionText)) {
+          diagnostics.push({
+            ruleId: RULE_ID,
+            severity: "info",
+            message:
+              "if condition spans multiple lines; parentheses were not added.",
+            span: lineIndex.rangeToSpan(node.location.range),
+            fixable: false,
+          });
+          continue;
+        }
+
+        const between = source.slice(ifEnd, conditionStart);
+        // Leave it alone if a comment sits between the keyword and condition.
+        if (between.includes("'")) continue;
+
+        edits.push(
+          {
+            ruleId: RULE_ID,
+            offset: ifEnd,
+            length: conditionStart - ifEnd,
+            replacement: "",
+          },
+          {
+            ruleId: RULE_ID,
+            offset: conditionStart,
+            length: 0,
+            replacement: "(",
+          },
+          {
+            ruleId: RULE_ID,
+            offset: conditionEnd,
+            length: 0,
+            replacement: ")",
+          },
+        );
         continue;
       }
 
       const leftParen = condition.tokens?.leftParen;
       if (!leftParen?.location) continue;
 
-      const ifEnd = lineIndex.positionToOffset(ifToken.location.range.end);
       const parenStart = lineIndex.positionToOffset(
         leftParen.location.range.start,
       );

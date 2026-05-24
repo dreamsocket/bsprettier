@@ -51,6 +51,8 @@ export interface BrsRoutine {
 export interface BrsParseResult {
   source: string;
   lineIndex: LineIndex;
+  /** Tokens from the lexer pass used to build the AST. */
+  tokens: BscToken[];
   ast: any;
   /** True if a fatal (error-severity) parser diagnostic was produced. */
   fatal: boolean;
@@ -207,6 +209,7 @@ function parseBrsImpl(
   return {
     source,
     lineIndex,
+    tokens: lexResult.tokens as BscToken[],
     ast,
     fatal,
     diagnostics,

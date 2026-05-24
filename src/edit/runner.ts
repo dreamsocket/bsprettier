@@ -221,7 +221,11 @@ function formatBrs(
     };
   }
 
-  for (const phase of phasesOf(active)) {
+  const phases = phasesOf(active);
+  let finalParsePending = false;
+  for (let phaseIndex = 0; phaseIndex < phases.length; phaseIndex++) {
+    const phase = phases[phaseIndex]!;
+    const isLastPhase = phaseIndex === phases.length - 1;
     if (currentSuppression.fileDisabled) {
       return unchanged(filePath, source, diagnostics);
     }
@@ -270,19 +274,23 @@ function formatBrs(
     if (phaseEdits.length > 0) {
       for (const e of phaseEdits) appliedRuleIds.add(e.ruleId);
       current = applyEdits(current, phaseEdits);
-      currentParse = parseBrs(current, filePath);
-      if (currentParse.fatal) {
-        return {
-          filePath,
-          status: "parse-error",
-          output: source,
-          changed: false,
-          diagnostics,
-          ruleIds: [],
-          errorMessage: "file no longer parses after an intermediate phase",
-        };
+      if (isLastPhase) {
+        finalParsePending = true;
+      } else {
+        currentParse = parseBrs(current, filePath);
+        if (currentParse.fatal) {
+          return {
+            filePath,
+            status: "parse-error",
+            output: source,
+            changed: false,
+            diagnostics,
+            ruleIds: [],
+            errorMessage: "file no longer parses after an intermediate phase",
+          };
+        }
+        currentSuppression = buildSuppressionMap(current, "brs");
       }
-      currentSuppression = buildSuppressionMap(current, "brs");
     }
     diagnostics.push(...reportableDiagnostics(phaseDiags, phaseEdits));
   }
@@ -296,8 +304,13 @@ function formatBrs(
     if (postFormatted !== current) {
       current = postFormatted;
       currentParse = parseBrs(current, filePath);
+      finalParsePending = false;
       appliedRuleIds.add("brs/format-style");
     }
+  }
+
+  if (finalParsePending) {
+    currentParse = parseBrs(current, filePath);
   }
 
   // `currentParse` already reflects the final `current` (reparsed after the last

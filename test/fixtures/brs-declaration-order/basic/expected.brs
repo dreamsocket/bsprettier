@@ -10,8 +10,8 @@ end function
 
 
 
-function _setData(value)
-    m.data = value
+function _setData(p_value)
+    m.data = p_value
 end function
 
 

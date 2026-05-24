@@ -104,8 +104,8 @@ export const blockIfForm: BrsRule = {
         ifKwSpan.offset + ifKwSpan.length,
       );
 
-      // Preserve the condition's paren state byte-for-byte; spacing between the
-      // keyword and `(` is normalized later by brs/if-condition-parens.
+      // Preserve the condition text byte-for-byte; parentheses and keyword
+      // spacing are handled later by brs/if-condition-parens.
       const replacement =
         `${ifKeywordText} ${conditionText}${eol}` +
         `${innerIndent}${statementText}${eol}` +

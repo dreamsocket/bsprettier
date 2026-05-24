@@ -1,8 +1,9 @@
 # bsprettier Code Conventions
 
 This document describes the BrightScript, BrighterScript, and SceneGraph XML
-conventions enforced by the current `bsprettier` implementation. The source
-code is the authority when this document and `bsprettier-plan.md` differ.
+formatting and code conventions enforced by the current `bsprettier`
+implementation. The README covers installation, CLI usage, and project
+workflows; this document is the rule and convention reference.
 
 ## Formatting Pipeline
 
@@ -19,15 +20,30 @@ code is the authority when this document and `bsprettier-plan.md` differ.
 - Output is reparsed after the last phase. If it no longer parses, the original
   source is returned unchanged.
 - Generated text uses the file's detected line ending.
-- Suppression comments are honored:
-  - BrightScript: `' bsprettier-disable` as the first non-blank line disables
-    the whole file.
-  - BrightScript: `' bsprettier-disable-next-line [ruleId,...]` suppresses the
-    next line.
-  - XML: `<!-- bsprettier-disable -->` as the first non-blank line disables the
-    whole file.
-  - XML: `<!-- bsprettier-disable-next-line [ruleId,...] -->` suppresses the
-    next line.
+- Suppressed files and lines are skipped before rule edits are applied.
+
+## External Tool Boundaries
+
+`bsprettier` integrates
+[`brighterscript-formatter`](https://github.com/rokucommunity/brighterscript-formatter)
+internally for `.brs` and `.bs` files. It runs before custom rules to normalize
+basic layout, spacing, casing, and indentation, then runs again after custom
+rules to clean up layout drift from moved declarations. When `--rules` is used,
+that formatter runs only if `brs/format-style` is included.
+
+| Concern | Integrated bsfmt | bslint | bsprettier AST rules |
+|---|---|---|---|
+| Indentation, keyword case, trailing whitespace | yes, pre/post | no | no |
+| Import sorting (`.bs`) | yes, default `sortImports` | no | no |
+| If condition parentheses presence | no | yes, `group`, also covers `while` | yes, simple same-line `if` / `else if` |
+| Condition paren spacing `if(` | no | no | yes |
+| Inline-if `then` presence | no | yes | no |
+| Inline-if to block conversion | no | no | yes |
+| Final newline | no | yes, `eol-last` | yes |
+| Top-level routine cohort order | no | no | yes |
+| Blank-line count between routines | no | no | yes |
+| XML script/interface/attribute order | no | no | yes |
+| `onChange` field avoidance | no | no | yes, diagnostic and project-mode migration |
 
 ## Default BRS/BS Style
 
@@ -52,9 +68,6 @@ The default `brighterscript-formatter` options are:
   "sortImports": true
 }
 ```
-
-These options can be partially overridden with the top-level `formatter`
-config key.
 
 ## BRS/BS Declaration Order
 
@@ -101,9 +114,8 @@ these are true:
 - There is no trailing same-line text or comment after the consequent.
 - The file indentation unit can be detected.
 
-The conversion preserves the condition text byte-for-byte. It does not add or
-remove condition parentheses; the later condition-spacing rule handles spacing
-only when parentheses already exist.
+The conversion preserves the condition text byte-for-byte. Parentheses are added
+or spacing-normalized later by the if-condition parentheses rule.
 
 Example:
 
@@ -119,18 +131,19 @@ if (m.ready)
 end if
 ```
 
-## BRS/BS If Condition Spacing
+## BRS/BS If Condition Parentheses
 
-For parenthesized `if` conditions, whitespace between the `if` token and the
-opening parenthesis is removed:
+Simple same-line `if` and `else if` conditions are wrapped in parentheses, and
+whitespace between the `if` token and the opening parenthesis is removed:
 
 ```brightscript
 if(m.ready)
 ```
 
-The rule does not add missing parentheses. Non-parenthesized conditions emit an
-informational diagnostic and are otherwise left alone. Comments between `if`
-and `(` prevent the edit.
+Already-parenthesized conditions keep their existing condition text, with only
+the keyword-to-paren spacing normalized. Multi-line conditions are left
+unchanged and emit an informational diagnostic. Comments between `if` and the
+condition or `(` prevent the edit.
 
 ## XML Attribute Order
 
@@ -149,10 +162,17 @@ between script elements, the rule emits a diagnostic and leaves them unchanged.
 
 Ordering rules:
 
-- Current-directory script URIs sort first. A current-directory URI has no URI
-  scheme and no slash, for example `Widget.brs`.
-- Current-directory scripts sort ASCII-ascending by full `uri`.
-- All remaining scripts sort ASCII-ascending by full `uri`.
+- The direct component script sorts first. It must be a current-directory URI
+  whose basename matches the XML filename, for example `Widget.brs` beside
+  `Widget.xml`.
+- Remaining current-directory scripts sort next, ASCII-ascending by full `uri`.
+- A blank line separates current-directory scripts from `pkg:` scripts.
+- `pkg:` scripts outside `pkg:/source/...` sort after current-directory scripts,
+  ASCII-ascending by full `uri`.
+- `pkg:/source/...` scripts sort after other `pkg:` scripts, ASCII-ascending by
+  full `uri`, with a blank line between the two groups.
+- Any remaining path or protocol scripts sort after `pkg:/source/...` scripts,
+  ASCII-ascending by full `uri`, separated by a blank line.
 - A comment on its own line directly above a script moves with that script.
 - Floating comments, trailing same-line comments, and section-header comments
   make the reorder unsafe and prevent the edit.
@@ -243,6 +263,9 @@ same run, the tool can migrate safely:
 ## Audit Conventions
 
 - `audit/handler-intent` is currently a no-op compatibility rule.
+- `audit/parameter-naming` expects routine parameters to use the `p_` prefix.
+  Safe fixes update the declaration and references inside the routine, but leave
+  associative-array keys and dotted member names alone.
 - `audit/ui-node-prefix` expects component-local `findNode(...)` assignments to
   use `m._ui*` member names.
 - Scripts linked from a component XML that extends `Scene`, and scene-level
@@ -272,18 +295,10 @@ same run, the tool can migrate safely:
 - `audit/prefer-dreamsocket-utils` flags selected builtin calls and recommends
   Dreamsocket helper namespaces such as `StringUtil_*` and `TypeUtil_*`.
 
-## Config Defaults
+## Default Rule Set
 
 ```json
 {
-  "include": ["**/*.{brs,bs,xml}"],
-  "ignore": [
-    "**/roku_modules/**",
-    "**/node_modules/**",
-    "**/dist/**",
-    "**/build/**",
-    "**/out/**"
-  ],
   "rules": {
     "brs/declaration-order": "error",
     "brs/declaration-spacing": "error",
@@ -294,6 +309,7 @@ same run, the tool can migrate safely:
     "xml/interface-section-order": "error",
     "xml/no-onchange-field": "warn",
     "audit/handler-intent": "warn",
+    "audit/parameter-naming": "warn",
     "audit/ui-node-prefix": "warn",
     "audit/private-member-naming": "warn",
     "audit/prefer-dreamsocket-utils": "off",
@@ -308,14 +324,3 @@ same run, the tool can migrate safely:
   }
 }
 ```
-
-Config is discovered from `package.json`, `bsprettier.json`,
-`bsprettier.config.json`, `.bsprettierrc.json`, or `.bsprettierrc`. Explicit
-`--config` paths override discovery.
-
-## Plan Sync Notes
-
-`bsprettier-plan.md` has been updated to match the implementation details this
-spec records. The plan still contains future release-hardening work, including a
-full corpus fixture suite, CI matrix setup, and an optional BSC plugin, but those
-items are now labelled as deferred or future work rather than current behavior.

@@ -66,6 +66,86 @@ describe("runner safety", () => {
     expect(result.output).not.toContain("end if");
   });
 
+  it("adds missing parentheses to simple if and else if conditions", () => {
+    const src =
+      "sub init()\n" +
+      "    if m.x then\n" +
+      "        m.y = 1\n" +
+      "    else if not m.z then\n" +
+      "        m.y = 2\n" +
+      "    end if\n" +
+      "end sub\n";
+    const result = formatFile({
+      filePath: "MissingParens.brs",
+      source: src,
+      config,
+      onlyRules: new Set(["brs/if-condition-parens"]),
+    });
+
+    expect(result.output).toContain("if(m.x) then");
+    expect(result.output).toContain("else if(not m.z) then");
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("wraps the whole unparenthesized condition expression", () => {
+    const src =
+      "sub init()\n" +
+      "    if m.x = true and not m.z then\n" +
+      "        m.y = 1\n" +
+      "    end if\n" +
+      "end sub\n";
+    const result = formatFile({
+      filePath: "CompoundCondition.brs",
+      source: src,
+      config,
+      onlyRules: new Set(["brs/if-condition-parens"]),
+    });
+
+    expect(result.output).toContain("if(m.x = true and not m.z) then");
+    expect(result.output).not.toContain("if((m.x = true and not m.z))");
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("does not double-wrap already-parenthesized conditions", () => {
+    const src = "sub init()\n    if (m.x) then m.y = 1\nend sub\n";
+    const result = formatFile({
+      filePath: "AlreadyGrouped.brs",
+      source: src,
+      config,
+      onlyRules: new Set(["brs/if-condition-parens"]),
+    });
+
+    expect(result.output).toContain("if(m.x) then");
+    expect(result.output).not.toContain("if((m.x)) then");
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("adds missing parentheses to inline ifs when only condition formatting is selected", () => {
+    const src = "sub init()\n    if m.x then m.y = 1\nend sub\n";
+    const result = formatFile({
+      filePath: "InlineOnlyMissingParens.brs",
+      source: src,
+      config,
+      onlyRules: new Set(["brs/if-condition-parens"]),
+    });
+
+    expect(result.output).toContain("if(m.x) then m.y = 1");
+    expect(result.output).not.toContain("end if");
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("adds missing parentheses after inline if conversion", () => {
+    const src = "sub init()\n    if m.x then m.y = 1\nend sub\n";
+    const result = formatFile({
+      filePath: "InlineMissingParens.brs",
+      source: src,
+      config,
+    });
+
+    expect(result.output).toContain("    if(m.x)\n        m.y = 1\n    end if");
+    expect(result.diagnostics).toEqual([]);
+  });
+
   it("does not run brighterscript-formatter unless brs/format-style is selected", () => {
     const src = "SUB init()\n    if (m.x) then m.y = 1\nEND SUB\n";
     const result = formatFile({
@@ -223,7 +303,7 @@ describe("runner safety", () => {
     expect(comment).toBeLessThan(z);
   });
 
-  it("sorts current-directory scripts before path imports with colliding basenames", () => {
+  it("groups script imports with blank lines between local, pkg, and source scripts", () => {
     const src =
       '<component name="LaunchDarkly" extends="Group">\n' +
       '  <script type="text/brightscript" uri="pkg:/components/launchdarkly/LaunchDarkly.brs" />\n' +
@@ -243,11 +323,38 @@ describe("runner safety", () => {
     ).toBe(false);
     expect(result.output).toBe(
       '<component name="LaunchDarkly" extends="Group">\n' +
-        '  <script type="text/brightscript" uri="ALocal.brs" />\n' +
         '  <script type="text/brightscript" uri="LaunchDarkly.brs" />\n' +
+        '  <script type="text/brightscript" uri="ALocal.brs" />\n' +
         '  <script type="text/brightscript" uri="ZLocal.brs" />\n' +
+        "\n" +
         '  <script type="text/brightscript" uri="pkg:/components/launchdarkly/LaunchDarkly.brs" />\n' +
+        "\n" +
         '  <script type="text/brightscript" uri="pkg:/source/ahelper.brs" />\n' +
+        "</component>\n",
+    );
+  });
+
+  it("adds script group blank lines when ordering is already correct", () => {
+    const src =
+      '<component name="Widget" extends="Group">\n' +
+      '  <script type="text/brightscript" uri="Widget.brs" />\n' +
+      '  <script type="text/brightscript" uri="WidgetHelpers.brs" />\n' +
+      '  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />\n' +
+      '  <script type="text/brightscript" uri="pkg:/source/device.brs" />\n' +
+      "</component>\n";
+    const result = formatFile({
+      filePath: "components/Widget.xml",
+      source: src,
+      config,
+    });
+    expect(result.output).toBe(
+      '<component name="Widget" extends="Group">\n' +
+        '  <script type="text/brightscript" uri="Widget.brs" />\n' +
+        '  <script type="text/brightscript" uri="WidgetHelpers.brs" />\n' +
+        "\n" +
+        '  <script type="text/brightscript" uri="pkg:/components/common/Utils.brs" />\n' +
+        "\n" +
+        '  <script type="text/brightscript" uri="pkg:/source/device.brs" />\n' +
         "</component>\n",
     );
   });
@@ -445,6 +552,86 @@ describe("runner safety", () => {
     expect(result.diagnostics.map((d) => d.message).join("\n")).toContain(
       "TypeUtil_*",
     );
+  });
+
+  it("renames parameters to p_ and updates routine-local references", () => {
+    const src =
+      "function render(item as object, count as integer) as object\n" +
+      "    item = item\n" +
+      "    result = { item: item, count: count }\n" +
+      "    m.item = item\n" +
+      "    item.title = count\n" +
+      "    return item\n" +
+      "end function\n";
+    const result = formatFile({
+      filePath: "Params.brs",
+      source: src,
+      config,
+      onlyRules: new Set(["audit/parameter-naming"]),
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.output).toBe(
+      "function render(p_item as object, p_count as integer) as object\n" +
+        "    p_item = p_item\n" +
+        "    result = { item: p_item, count: p_count }\n" +
+        "    m.item = p_item\n" +
+        "    p_item.title = p_count\n" +
+        "    return p_item\n" +
+        "end function\n",
+    );
+  });
+
+  it("renames parameters in conditions after inline if conversion", () => {
+    const src =
+      "function pick(item as object) as object\n" +
+      "    if item <> invalid then return item\n" +
+      "    return invalid\n" +
+      "end function\n";
+    const result = formatFile({
+      filePath: "ParamInlineIf.brs",
+      source: src,
+      config,
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.output).toContain(
+      "    if(p_item <> invalid)\n        return p_item\n    end if",
+    );
+  });
+
+  it("accepts parameters that already use p_", () => {
+    const src =
+      "sub show(p_item as object)\n" +
+      "    print p_item\n" +
+      "end sub\n";
+    const result = formatFile({
+      filePath: "Params.brs",
+      source: src,
+      config,
+      onlyRules: new Set(["audit/parameter-naming"]),
+    });
+
+    expect(result.changed).toBe(false);
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("does not rename a parameter when the p_ target already exists", () => {
+    const src =
+      "sub show(item as object, p_item as object)\n" +
+      "    print item\n" +
+      "end sub\n";
+    const result = formatFile({
+      filePath: "Params.brs",
+      source: src,
+      config,
+      onlyRules: new Set(["audit/parameter-naming"]),
+    });
+
+    expect(result.changed).toBe(false);
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]!.fixable).toBe(false);
+    expect(result.diagnostics[0]!.message).toContain("already exists");
   });
 
   it("accepts _set prefixes for m.top observeField callbacks", () => {

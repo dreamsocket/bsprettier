@@ -7,6 +7,7 @@ import { scriptOrder } from "./xml/script-order.js";
 import { interfaceSectionOrder } from "./xml/interface-section-order.js";
 import { noOnchangeField } from "./xml/no-onchange-field.js";
 import { handlerIntent } from "./audit/handler-intent.js";
+import { parameterNaming } from "./audit/parameter-naming.js";
 import { uiNodePrefix } from "./audit/ui-node-prefix.js";
 import {
   privateInterfaceFunctionNaming,
@@ -22,6 +23,7 @@ export const BRS_RULES: BrsRule[] = [
   blockIfForm,
   ifConditionParens,
   handlerIntent,
+  parameterNaming,
   uiNodePrefix,
   privateMemberNaming,
   hardcodedString,
