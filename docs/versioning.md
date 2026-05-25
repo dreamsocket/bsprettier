@@ -36,37 +36,38 @@ Artifact-scoped tags keep Git history unambiguous about *what* released:
 
 - `cli-vX.Y.Z` — a CLI release
 - `vscode-vX.Y.Z` — an extension release
-- `release-vYYYY.MM.DD` — a coordinated compatibility bundle (a "release train")
 
-## GitHub Releases = compatibility bundles
+There is **no repo-wide or dated umbrella tag**. Each artifact releases on its
+own track; change magnitude lives in each artifact's semver (major = breaking,
+minor = feature, patch = fix), driven by conventional commits.
 
-A `release-vYYYY.MM.DD` GitHub Release is a **snapshot of known-good artifact
-versions**, not a single artifact's version. Its notes list every artifact
-version and link to the per-artifact changelogs. Example:
+## GitHub Releases = one release per artifact
 
-```text
-Release v2026.05.25
+There is no coordinated "release train" / compatibility bundle. release-please
+creates **one GitHub Release per artifact release**, automatically, when its
+release PR is merged:
 
-Artifacts:
-- CLI: 1.4.0
-- VS Code Extension: 0.8.2
-```
+- A `cli-v*` release — body is the CLI changelog (features / fixes / breaking).
+- A `vscode-v*` release — body is the extension changelog; the VSIX is attached
+  as an asset.
 
-Per-artifact tags/releases (`cli-v*`, `vscode-v*`) carry the detailed changelog
-for that artifact; the dated release train ties a set together for users.
+The repo's Releases page shows the two streams interleaved by date, each prefixed
+by component, so the per-artifact history (and where the larger changes are)
+stays directly readable.
 
-> The biggest source of user confusion in projects like this is assuming
-> "one GitHub Release = one artifact version." The dated release train plus the
-> explicit artifact list in the notes is how we avoid that.
+Because the extension bundles the CLI, the **extension release effectively names
+the user-facing bundle** — its version already implies which CLI is inside. To
+keep a single obvious "current" entry, the extension release is marked GitHub
+"Latest"; CLI releases are marked not-latest.
 
 ## Distribution channels
 
 - **CLI**: git install today — `npm i github:dreamsocket/bsprettier` (the
   `prepare` script builds it on install). Publishing to **npmjs.org** is planned
   but deferred.
-- **Extension**: the **VSIX** is attached to the GitHub Release **and** published
-  to **Open VSX** (the registry Cursor installs from). The Microsoft Marketplace
-  is an optional future channel.
+- **Extension**: the **VSIX** is attached to the `vscode-v*` GitHub Release
+  **and** published to **Open VSX** (the registry Cursor installs from). The
+  Microsoft Marketplace is an optional future channel.
 
 ## Why a monorepo (not separate repos)
 
