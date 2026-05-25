@@ -102,6 +102,43 @@ moves with it.
 - If the tail after the last routine is whitespace-only, it is normalized to
   exactly one trailing newline.
 
+Pseudo example showing declaration cohorts and routine spacing:
+
+```brightscript
+' Before: cohorts are mixed and spacing is inconsistent.
+function _onLoaded()
+end function
+sub doWork()
+end sub
+sub init()
+end sub
+
+sub _cacheResult()
+end sub
+```
+
+becomes:
+
+```brightscript
+sub init()
+end sub
+
+
+
+sub doWork()
+end sub
+
+
+
+sub _cacheResult()
+end sub
+
+
+
+function _onLoaded()
+end function
+```
+
 ## BRS/BS Inline If Form
 
 Single-line inline `if` statements are converted to block form only when all of
@@ -137,7 +174,21 @@ Simple same-line `if` and `else if` conditions are wrapped in parentheses, and
 whitespace between the `if` token and the opening parenthesis is removed:
 
 ```brightscript
+if m.ready
+    start()
+else if m.failed
+    stop()
+end if
+```
+
+becomes:
+
+```brightscript
 if(m.ready)
+    start()
+else if(m.failed)
+    stop()
+end if
 ```
 
 Already-parenthesized conditions keep their existing condition text, with only
@@ -153,6 +204,23 @@ quote style and inter-attribute whitespace:
 - `<component>` and `<function>` pin `name` first.
 - All other elements pin `id` first when present.
 - Remaining attributes sort ASCII-ascending, case-sensitive.
+
+Pseudo example:
+
+```xml
+<!-- Before: id/name are not pinned, and remaining attributes are unsorted. -->
+<field type="string" alwaysNotify="true" id="title" />
+
+<function params="value" name="setTitle" />
+```
+
+becomes:
+
+```xml
+<field id="title" alwaysNotify="true" type="string" />
+
+<function name="setTitle" params="value" />
+```
 
 ## XML Script Order
 
@@ -177,6 +245,27 @@ Ordering rules:
 - Floating comments, trailing same-line comments, and section-header comments
   make the reorder unsafe and prevent the edit.
 
+Pseudo example for `Widget.xml`:
+
+```xml
+<!-- Before: current-directory, pkg, and source scripts are mixed. -->
+<script uri="pkg:/source/Analytics.brs" />
+<script uri="pkg:/components/shared/Strings.brs" />
+<script uri="Helpers.brs" />
+<script uri="Widget.brs" />
+```
+
+becomes:
+
+```xml
+<script uri="Widget.brs" />
+<script uri="Helpers.brs" />
+
+<script uri="pkg:/components/shared/Strings.brs" />
+
+<script uri="pkg:/source/Analytics.brs" />
+```
+
 ## XML Interface Order
 
 Inside `<interface>`, children must be only `<field>` or `<function>` elements.
@@ -188,6 +277,9 @@ Without section headers, members are gathered and sorted as:
 2. Property fields, sorted by `id`
 3. Functions, sorted by `name`
 
+The rule inserts one blank line between those section groups and keeps members
+within the same group packed together.
+
 With section-header comments, headers are treated as fixed run boundaries. The
 rule sorts members within each run but does not move members across runs. A
 field/function class change also starts a new run. This preserves author
@@ -197,6 +289,31 @@ a different canonical section.
 A comment on its own line directly above a member moves with that member.
 Floating or trailing comments prevent a needed reorder. If the interface is
 already ordered, no diagnostic is emitted for those comments.
+
+Pseudo example without section headers:
+
+```xml
+<!-- Before: properties, functions, and event fields are mixed. -->
+<interface>
+    <function name="reset" />
+    <field id="title" type="string" />
+    <field id="dismissed" type="boolean" alias="state.dismissed" />
+    <field id="count" type="integer" />
+</interface>
+```
+
+becomes:
+
+```xml
+<interface>
+    <field id="dismissed" alias="state.dismissed" type="boolean" />
+
+    <field id="count" type="integer" />
+    <field id="title" type="string" />
+
+    <function name="reset" />
+</interface>
+```
 
 ## XML Field Classification
 
@@ -240,6 +357,35 @@ Default classification:
 
 An unresolved ambiguous field prevents interface reordering.
 
+Pseudo example:
+
+```xml
+<interface>
+    <field id="dismissed" alias="state.dismissed" type="boolean" />  <!-- event-backed, event-like name -->
+
+    <field id="expanded" type="boolean" />  <!-- state participle without production evidence -->
+    <field id="title" type="string" />      <!-- ordinary property name -->
+</interface>
+```
+
+Backing and usage evidence classify those fields. A separate state field that is
+both produced and read remains ambiguous:
+
+```brightscript
+sub close()
+    m.top.dismissed = true ' produced and event-like, so classified as event
+end sub
+
+sub render()
+    title = m.top.title ' read usage keeps this classified as property
+end sub
+
+sub toggle()
+    m.top.checked = true  ' produced state participle
+    state = m.top.checked ' read plus write makes this ambiguous
+end sub
+```
+
 ## XML onChange Convention
 
 `onChange="..."` on `<field>` is discouraged. The rule emits a diagnostic that
@@ -259,6 +405,33 @@ same run, the tool can migrate safely:
   the generated `_set<FieldId>` name when there is no collision and no existing
   observer for the field.
 - Leave existing code observers and established handler names alone.
+
+Pseudo migration:
+
+```xml
+<!-- Before -->
+<field id="title" type="string" onChange="_onTitleChanged" />
+```
+
+```brightscript
+sub _onTitleChanged()
+end sub
+```
+
+becomes:
+
+```xml
+<field id="title" type="string" />
+```
+
+```brightscript
+sub init()
+    m.top.observeFieldScoped("title", "_setTitle")
+end sub
+
+sub _setTitle()
+end sub
+```
 
 ## Audit Conventions
 
@@ -294,6 +467,27 @@ same run, the tool can migrate safely:
   `.text`; use `ResourceUtil_getString(...)`.
 - `audit/prefer-dreamsocket-utils` flags selected builtin calls and recommends
   Dreamsocket helper namespaces such as `StringUtil_*` and `TypeUtil_*`.
+
+Pseudo audit example:
+
+```xml
+<interface>
+    <function name="setTitle" />
+</interface>
+```
+
+```brightscript
+sub setTitle(p_title as string) ' XML interface routines stay public.
+    m._uiTitle = m.top.findNode("titleLabel") ' component-local node handle.
+    m._lastTitle = p_title                    ' private member is lowerCamelCase.
+    m._TITLE_KEY = "home.title"               ' private constant may be _ALL_CAPS.
+    m._uiTitle.text = ResourceUtil_getString(m._TITLE_KEY)
+end sub
+
+sub _renderCount(p_count as integer) ' non-interface component routine is private.
+    text = StringUtil_toString(p_count)
+end sub
+```
 
 ## Default Rule Set
 
