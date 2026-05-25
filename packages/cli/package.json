@@ -61,7 +61,9 @@
     "roku",
     "scenegraph",
     "formatter",
-    "prettier"
+    "prettier",
+    "linter",
+    "audit"
   ],
   "repository": {
     "type": "git",
