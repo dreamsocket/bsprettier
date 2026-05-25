@@ -7,6 +7,11 @@
   "license": "MIT",
   "type": "module",
   "publisher": "dreamsocket",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dreamsocket/bsprettier.git",
+    "directory": "packages/vscode-extension"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -23,6 +28,7 @@
   "main": "./dist/extension.cjs",
   "files": [
     "dist",
+    "LICENSE",
     "README.md",
     "package.json"
   ],
@@ -67,7 +73,7 @@
     "package": "npm run bundle && vsce package --no-dependencies"
   },
   "dependencies": {
-    "@dreamsocket/bsprettier": "file:../.."
+    "@dreamsocket/bsprettier": "file:../cli"
   },
   "devDependencies": {
     "@types/vscode": "1.90.0",
