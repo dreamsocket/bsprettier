@@ -1,0 +1,15 @@
+{
+  "editor.formatOnSave": true,
+  "[brightscript]": {
+    "editor.defaultFormatter": "dreamsocket.bsprettier-vscode"
+  },
+  "[brighterscript]": {
+    "editor.defaultFormatter": "dreamsocket.bsprettier-vscode"
+  },
+  "[xml]": {
+    "editor.defaultFormatter": "redhat.vscode-xml"
+  },
+  "bsprettier.editor.mode": "project",
+  "bsprettier.configPath": "bsprettier.json",
+  "bsprettier.trace": false
+}

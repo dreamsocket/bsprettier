@@ -87,7 +87,72 @@ bslint --fix
 bsprettier "components/**/*.{brs,bs,xml}" --write
 ```
 
-## Format-on-save and AI-agent use
+## Editor integration (VSCode / Cursor)
+
+A companion formatter extension lives in `packages/vscode`. Keep the
+RokuCommunity BrighterScript extension installed for language services; the
+bsprettier extension owns only formatting.
+
+### Install
+
+Build and package the VSIX (builds the library + extension, then runs `vsce`):
+
+```sh
+npm run package:vscode
+```
+
+In Cursor/VSCode: `Cmd+Shift+P` → `Extensions: Install from VSIX...` → select
+`packages/vscode/bsprettier-vscode-<version>.vsix` → reload. Bump the extension
+`version` before each rebuild so the editor installs the new bundle instead of
+reusing the cached one.
+
+### Settings
+
+```json
+{
+  "editor.formatOnSave": true,
+  "[brightscript]": {
+    "editor.defaultFormatter": "dreamsocket.bsprettier-vscode"
+  },
+  "[brighterscript]": {
+    "editor.defaultFormatter": "dreamsocket.bsprettier-vscode"
+  },
+  "[xml]": {
+    "editor.defaultFormatter": "redhat.vscode-xml"
+  },
+  "bsprettier.editor.mode": "project",
+  "bsprettier.configPath": "bsprettier.json"
+}
+```
+
+Language ids: `brightscript` = `.brs`, `brighterscript` = `.bs`. For `.brs`/`.bs`,
+bsprettier is the default formatter and runs on save directly.
+
+| Setting | Purpose |
+|---|---|
+| `bsprettier.editor.mode` | `project` (default) keeps a warm workspace model so linked XML/component rules run on save; `singleFile` mirrors the CLI `--stdin-filepath` fallback. |
+| `bsprettier.configPath` | Optional explicit config path (relative to the workspace root). If omitted, config discovery searches upward. |
+| `bsprettier.trace` | `false` by default. Set `true` to log per-format invocations, timings, and XML save-participant activity to the `bsprettier` output channel. Errors and fallbacks always log. |
+
+### XML formatting on save
+
+VSCode allows only one default formatter per language, so XML is handled as a
+chain rather than a single formatter:
+
+- Red Hat XML (`redhat.vscode-xml`) stays the `xml` default formatter and runs on
+  save like any other XML.
+- bsprettier additionally runs its Roku-specific passes on save for **component
+  XML only** (files whose root is `<component>`), via a save participant.
+
+Both passes run on save for component XML. The bsprettier pass honors
+`editor.formatOnSave` and skips the `afterDelay` autosave, matching the built-in
+formatter.
+
+The `[xml]` default-formatter line is optional in practice but pins Red Hat
+deterministically; without it, a later-installed XML formatter could silently
+change which one runs on save.
+
+## AI-agent use
 
 Per file via stdin:
 
@@ -104,10 +169,17 @@ bsprettier "components/foo/**/*.{brs,bs,xml}" --write
 ## Programmatic API
 
 ```ts
-import { formatText, loadConfig } from "@dreamsocket/bsprettier";
+import { WorkspaceFormatService, formatText, loadConfig } from "@dreamsocket/bsprettier";
 
 const result = formatText("components/foo/Bar.brs", source, loadConfig());
 if (result.changed) console.log(result.output);
+
+const service = new WorkspaceFormatService({ cwd: process.cwd() });
+const editorResult = service.format({
+  mode: "project",
+  filePath: "components/foo/Bar.brs",
+  source,
+});
 ```
 
 ## Build
@@ -122,6 +194,12 @@ separate bundle step. To run the CLI from a build without the installed bin:
 
 ```sh
 node dist/node.js "components/**/*.{brs,bs,xml}" --check
+```
+
+To build the VSCode/Cursor extension package:
+
+```sh
+npm run build:vscode
 ```
 
 ### Exit codes

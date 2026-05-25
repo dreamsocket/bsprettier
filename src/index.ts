@@ -7,6 +7,25 @@ import {
 } from "./edit/runner.js";
 
 export { formatFile } from "./edit/runner.js";
+export {
+  formatProjectFileForEditor,
+  formatSingleFileForEditor,
+  loadEditorConfig,
+} from "./editor.js";
+export type {
+  ProjectEditorFormatOptions,
+  SingleFileEditorFormatOptions,
+} from "./editor.js";
+export {
+  WorkspaceFormatService,
+} from "./editor/workspace-service.js";
+export type {
+  EditorFormatMode,
+  WorkspaceDocument,
+  WorkspaceFormatRequest,
+  WorkspaceFormatResponse,
+  WorkspaceFormatServiceOptions,
+} from "./editor/workspace-service.js";
 export type {
   FormatFileResult,
   FormatOptions,

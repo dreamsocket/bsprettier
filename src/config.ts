@@ -109,6 +109,7 @@ export interface LoadConfigOptions {
 
 export function loadConfig(opts: LoadConfigOptions = {}): BsprettierConfig {
   const explorer = cosmiconfigSync("bsprettier", {
+    searchStrategy: "global",
     searchPlaces: [
       "package.json",
       "bsprettier.json",

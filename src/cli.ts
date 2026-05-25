@@ -1,12 +1,8 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
-import fastGlob from "fast-glob";
-import ignoreFactory from "ignore";
-import picomatch from "picomatch";
+import { readFileSync, writeFileSync } from "node:fs";
+import { relative, resolve } from "node:path";
 import pc from "picocolors";
 import {
   loadConfig,
-  DEFAULT_IGNORE,
   ruleSetting,
   type BsprettierConfig,
 } from "./config.js";
@@ -15,8 +11,10 @@ import {
   formatFile,
   type FormatFileResult,
 } from "./edit/runner.js";
+import { formatSingleFileForEditor } from "./editor.js";
 import { migrateOnChangeObservers } from "./edit/onchange-migration.js";
 import { getProjectContext } from "./project/context.js";
+import { discoverFiles } from "./project/discovery.js";
 
 interface CliArgs {
   globs: string[];
@@ -211,41 +209,6 @@ function shouldUseProgress(args: CliArgs): boolean {
   return args.progress ?? process.stderr.isTTY === true;
 }
 
-function discoverFiles(
-  globs: string[],
-  config: BsprettierConfig,
-  cwd: string,
-): string[] {
-  const patterns = globs.length > 0 ? globs : config.include;
-  const ignorePatterns = [...DEFAULT_IGNORE, ...config.ignore];
-  let entries = fastGlob.sync(patterns, {
-    cwd,
-    absolute: true,
-    ignore: ignorePatterns,
-    dot: false,
-    onlyFiles: true,
-  });
-
-  // fast-glob's `ignore` is matched relative to cwd and silently does nothing
-  // for globs that reach outside cwd (e.g. `../../app/**`). Post-filter the
-  // absolute paths so `**/...`-style ignore patterns apply regardless of where
-  // the target lives. (fast-glob's own filtering still prunes the in-cwd case.)
-  const isIgnored = picomatch(ignorePatterns, { dot: true });
-  entries = entries.filter((abs) => !isIgnored(abs));
-
-  // Apply .gitignore if present.
-  const gitignorePath = resolve(cwd, ".gitignore");
-  if (existsSync(gitignorePath)) {
-    const ig = ignoreFactory().add(readFileSync(gitignorePath, "utf8"));
-    return entries.filter((abs) => {
-      const rel = relative(cwd, abs);
-      if (rel.startsWith("..") || isAbsolute(rel)) return true;
-      return rel.length > 0 && !ig.ignores(rel);
-    });
-  }
-  return entries;
-}
-
 function addRuleIds(
   ruleIdsByFile: Map<string, Set<string>>,
   filePath: string,
@@ -289,11 +252,15 @@ export async function main(argv: string[]): Promise<number> {
 
   // Stdin mode.
   if (args.stdinFilepath) {
-    let config: BsprettierConfig;
+    const source = await readStdin();
+    let result: FormatFileResult;
     try {
-      config = loadConfig({
+      result = formatSingleFileForEditor({
+        filePath: args.stdinFilepath,
+        source,
         configPath: args.configPath,
-        searchFrom: resolve(cwd, args.stdinFilepath),
+        cwd,
+        onlyRules: args.rules,
       });
     } catch (err) {
       process.stderr.write(
@@ -301,13 +268,6 @@ export async function main(argv: string[]): Promise<number> {
       );
       return 3;
     }
-    const source = await readStdin();
-    const result = formatFile({
-      filePath: args.stdinFilepath,
-      source,
-      config,
-      onlyRules: args.rules,
-    });
     if (result.status === "parse-error" || result.status === "conflict") {
       process.stderr.write(
         `${pc.red("error")}: ${result.errorMessage ?? result.status}\n`,

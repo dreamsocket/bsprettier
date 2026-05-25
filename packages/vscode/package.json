@@ -1,0 +1,77 @@
+{
+  "name": "bsprettier-vscode",
+  "displayName": "bsprettier",
+  "description": "VSCode and Cursor formatter integration for @dreamsocket/bsprettier",
+  "version": "0.1.6",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "publisher": "dreamsocket",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Formatters"
+  ],
+  "activationEvents": [
+    "onLanguage:brightscript",
+    "onLanguage:brighterscript",
+    "onLanguage:xml",
+    "onStartupFinished",
+    "onCommand:bsprettier.formatDocument"
+  ],
+  "main": "./dist/extension.cjs",
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "bsprettier.formatDocument",
+        "title": "bsprettier: Format Document"
+      }
+    ],
+    "configuration": {
+      "title": "bsprettier",
+      "properties": {
+        "bsprettier.editor.mode": {
+          "type": "string",
+          "enum": [
+            "project",
+            "singleFile"
+          ],
+          "default": "project",
+          "description": "Controls whether editor formatting uses project-aware linked-file context or single-file stdin-compatible formatting."
+        },
+        "bsprettier.configPath": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "description": "Optional explicit bsprettier config path."
+        },
+        "bsprettier.trace": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log per-format diagnostics (invocations, timings, XML save-participant activity) to the bsprettier output channel. Errors and fallbacks are always logged."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "bundle": "esbuild src/extension.ts --bundle --platform=node --format=cjs --main-fields=module,main --external:vscode --external:fsevents --outfile=dist/extension.cjs",
+    "package": "npm run bundle && vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "@dreamsocket/bsprettier": "file:../.."
+  },
+  "devDependencies": {
+    "@types/vscode": "1.90.0",
+    "@vscode/vsce": "^3.9.1",
+    "esbuild": "^0.28.0"
+  }
+}

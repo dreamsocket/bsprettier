@@ -4,6 +4,9 @@
   "description": "Opinionated formatter and convention auditor for BrightScript, BrighterScript, and SceneGraph XML files",
   "license": "MIT",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "bin": {
     "bsprettier": "bin/bsprettier.js"
   },
@@ -26,8 +29,12 @@
   "scripts": {
     "build": "npm run build:lib",
     "build:lib": "tsc -p tsconfig.json",
+    "build:vscode": "tsc -p packages/vscode/tsconfig.json",
+    "build:all": "npm run build:lib && npm run build:vscode",
+    "package:vscode": "npm run build:all && npm --workspace packages/vscode run package",
     "dev": "tsx src/node.ts",
     "bench": "tsx scripts/bench.ts",
+    "bench:editor": "tsx scripts/bench-editor.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
