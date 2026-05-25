@@ -9,9 +9,14 @@ AI-generated edits.
 
 ## Install
 
+Installed from Git today (npmjs publishing is planned but deferred):
+
 ```sh
-npm install --save-dev @dreamsocket/bsprettier
+npm install --save-dev github:dreamsocket/bsprettier
 ```
+
+The `prepare` script builds the package on install. See
+[`docs/versioning.md`](./docs/versioning.md) for release/distribution details.
 
 ## Usage
 
