@@ -1,7 +1,7 @@
 {
   "name": "bsprettier-vscode",
   "displayName": "bsprettier",
-  "description": "Brightscript code formatter",
+  "description": "Opinionated BrightScript, BrighterScript, and SceneGraph XML formatter for VS Code and Cursor",
   "version": "0.1.8",
   "private": true,
   "license": "MIT",
@@ -18,6 +18,13 @@
   "icon": "icon.png",
   "categories": [
     "Formatters"
+  ],
+  "keywords": [
+    "brightscript",
+    "brighterscript",
+    "roku",
+    "scenegraph",
+    "formatter"
   ],
   "activationEvents": [
     "onLanguage:brightscript",
