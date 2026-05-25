@@ -4,7 +4,7 @@
 
 # bsprettier
 
-Formatter integration for VSCode and Cursor for **BrightScript** (`.brs`),
+VSCode compatible IDE extension that formats **BrightScript** (`.brs`),
 **BrighterScript** (`.bs`), and **SceneGraph XML** (`.xml`) files.
 
 This extension does not replace the RokuCommunity BrighterScript extension; keep

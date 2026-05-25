@@ -1,7 +1,7 @@
 {
   "name": "bsprettier-vscode",
   "displayName": "bsprettier",
-  "description": "VSCode and Cursor formatter integration for @dreamsocket/bsprettier",
+  "description": "Brightscript code formatter",
   "version": "0.1.8",
   "private": true,
   "license": "MIT",
