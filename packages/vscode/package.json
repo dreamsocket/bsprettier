@@ -2,7 +2,7 @@
   "name": "bsprettier-vscode",
   "displayName": "bsprettier",
   "description": "VSCode and Cursor formatter integration for @dreamsocket/bsprettier",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -63,7 +63,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "bundle": "esbuild src/extension.ts --bundle --platform=node --format=cjs --main-fields=module,main --external:vscode --external:fsevents --outfile=dist/extension.cjs",
+    "bundle": "esbuild src/extension.ts --bundle --platform=node --format=cjs --main-fields=module,main --external:vscode --external:fsevents --minify --alias:roku-deploy=./stub-empty.cjs --alias:typescript=./stub-empty.cjs --outfile=dist/extension.cjs",
     "package": "npm run bundle && vsce package --no-dependencies"
   },
   "dependencies": {
