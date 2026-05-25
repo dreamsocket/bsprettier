@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "separate-pull-requests": true,
+  "include-component-in-tag": true,
+  "include-v-in-tag": true,
+  "tag-separator": "-",
+  "plugins": [
+    "node-workspace"
+  ],
+  "packages": {
+    "packages/cli": {
+      "release-type": "node",
+      "package-name": "@dreamsocket/bsprettier",
+      "component": "cli"
+    },
+    "packages/vscode-extension": {
+      "release-type": "node",
+      "package-name": "bsprettier-vscode",
+      "component": "vscode"
+    }
+  }
+}
