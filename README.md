@@ -81,7 +81,7 @@ diagnostic-only, and `off` disables a rule.
 
 ## Code conventions
 
-See [CODE_CONVENTIONS.md](./CODE_CONVENTIONS.md) for the formatting pipeline,
+See [docs/code-conventions.md](./docs/code-conventions.md) for the formatting pipeline,
 default rule set, and the BrightScript, BrighterScript, SceneGraph XML, and
 audit conventions enforced by `bsprettier`.
 

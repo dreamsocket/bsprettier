@@ -9,6 +9,9 @@ As-built documentation for bsprettier internals. Start here.
   formatter extension: modes, architecture, key files, and build/packaging.
 - [versioning.md](./versioning.md) — how versions and releases work: independent
   artifact versions, tag scheme, release trains, and distribution channels.
+- [code-conventions.md](./code-conventions.md) — the rule and convention
+  reference: the formatting pipeline, default BRS/BS and XML styles, every rule's
+  behavior, audit conventions, and the default rule set.
 
 For the in-progress distribution / CI / release work, see `ROADMAP.md` at the
 repo root.
