@@ -5,6 +5,10 @@ formatting and code conventions enforced by the current `bsprettier`
 implementation. The README covers installation, CLI usage, and project
 workflows; this document is the rule and convention reference.
 
+BrightScript examples use `vb` code fences because many Markdown renderers do
+not ship a BrightScript grammar. Visual Basic highlighting is close enough for
+keywords, strings, and single-quote comments while keeping examples readable.
+
 ## Formatting Pipeline
 
 - `.brs` and `.bs` files are parsed with BrighterScript before any edit. Files
@@ -20,7 +24,34 @@ workflows; this document is the rule and convention reference.
 - Output is reparsed after the last phase. If it no longer parses, the original
   source is returned unchanged.
 - Generated text uses the file's detected line ending.
-- Suppressed files and lines are skipped before rule edits are applied.
+- Suppressed files and lines are skipped before rule edits are applied. A
+  whole-file suppression must be the first non-blank line. A next-line
+  suppression can name specific rule ids or omit ids to suppress every rule on
+  the following line:
+
+```vb
+' bsprettier-disable
+
+' bsprettier-disable-next-line brs/if-condition-parens,audit/parameter-naming
+if m.ready then doWork(title)
+```
+
+```xml
+<!-- bsprettier-disable -->
+
+<!-- bsprettier-disable-next-line xml/interface-section-order -->
+<field id="title" type="string" />
+```
+
+Current custom rule phases:
+
+| Phase | Rules |
+|---|---|
+| `0` | `audit/private-member-naming`, `xml/attribute-order` |
+| `1` | `brs/declaration-order`, `xml/script-order` |
+| `2` | `brs/declaration-spacing`, `xml/interface-section-order` |
+| `3` | `brs/block-if-form`, `xml/no-onchange-field` diagnostics |
+| `4` | `brs/if-condition-parens`, `audit/handler-intent`, `audit/parameter-naming`, `audit/ui-node-prefix`, `audit/hardcoded-string`, `audit/prefer-dreamsocket-utils`, XML interface-function naming diagnostics from `audit/private-member-naming` |
 
 ## External Tool Boundaries
 
@@ -29,7 +60,9 @@ workflows; this document is the rule and convention reference.
 internally for `.brs` and `.bs` files. It runs before custom rules to normalize
 basic layout, spacing, casing, and indentation, then runs again after custom
 rules to clean up layout drift from moved declarations. When `--rules` is used,
-that formatter runs only if `brs/format-style` is included.
+that formatter runs only if `brs/format-style` is included. `brs/format-style`
+is an implicit formatter switch, not a configurable rule entry in the default
+rule set.
 
 | Concern | Integrated bsfmt | bslint | bsprettier AST rules |
 |---|---|---|---|
@@ -44,6 +77,10 @@ that formatter runs only if `brs/format-style` is included.
 | Blank-line count between routines | no | no | yes |
 | XML script/interface/attribute order | no | no | yes |
 | `onChange` field avoidance | no | no | yes, diagnostic and project-mode migration |
+| Private routine/member naming | no | no | yes |
+| Parameter naming | no | no | yes |
+| UI node handle naming | no | no | yes |
+| Hardcoded `.text` strings and helper preference audits | no | no | yes, diagnostics only |
 
 ## Default BRS/BS Style
 
@@ -104,34 +141,67 @@ moves with it.
 
 Pseudo example showing declaration cohorts and routine spacing:
 
-```brightscript
+```vb
 ' Before: cohorts are mixed and spacing is inconsistent.
 function _onLoaded()
 end function
-sub doWork()
+
+function render()
+end function
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    return false
+end function
+
+sub _cacheResult()
 end sub
+
 sub init()
 end sub
 
-sub _cacheResult()
+sub loadData()
+end sub
+
+sub _onFocused()
 end sub
 ```
 
 becomes:
 
-```brightscript
+```vb
+' init always sorts first.
 sub init()
 end sub
 
 
 
-sub doWork()
+' Public routines are unprefixed and sort ASCII-ascending.
+sub loadData()
 end sub
 
 
 
+function render()
+end function
+
+
+
+' Private routines use a leading underscore and sort after public routines.
 sub _cacheResult()
 end sub
+
+
+
+' _on* routines are observers and sort ASCII-ascending within that cohort.
+sub _onFocused()
+end sub
+
+
+
+' onKeyEvent is an observer and sorts as the virtual name _onKeyEvent.
+function onKeyEvent(key as string, press as boolean) as boolean
+    return false
+end function
 
 
 
@@ -156,13 +226,13 @@ or spacing-normalized later by the if-condition parentheses rule.
 
 Example:
 
-```brightscript
+```vb
 if (m.ready) then m.count = 1
 ```
 
 becomes:
 
-```brightscript
+```vb
 if (m.ready)
     m.count = 1
 end if
@@ -173,7 +243,7 @@ end if
 Simple same-line `if` and `else if` conditions are wrapped in parentheses, and
 whitespace between the `if` token and the opening parenthesis is removed:
 
-```brightscript
+```vb
 if m.ready
     start()
 else if m.failed
@@ -183,7 +253,7 @@ end if
 
 becomes:
 
-```brightscript
+```vb
 if(m.ready)
     start()
 else if(m.failed)
@@ -235,12 +305,12 @@ Ordering rules:
   `Widget.xml`.
 - Remaining current-directory scripts sort next, ASCII-ascending by full `uri`.
 - A blank line separates current-directory scripts from `pkg:` scripts.
-- `pkg:` scripts outside `pkg:/source/...` sort after current-directory scripts,
-  ASCII-ascending by full `uri`.
-- `pkg:/source/...` scripts sort after other `pkg:` scripts, ASCII-ascending by
-  full `uri`, with a blank line between the two groups.
-- Any remaining path or protocol scripts sort after `pkg:/source/...` scripts,
-  ASCII-ascending by full `uri`, separated by a blank line.
+- All `pkg:` scripts sort after current-directory scripts, ASCII-ascending by
+  full `uri`.
+- A blank line separates `pkg:/source/...` scripts from other `pkg:` scripts
+  when those spacing groups meet.
+- Any remaining path or protocol scripts sort after `pkg:` scripts,
+  ASCII-ascending by full `uri`, separated from `pkg:` scripts by a blank line.
 - A comment on its own line directly above a script moves with that script.
 - Floating comments, trailing same-line comments, and section-header comments
   make the reorder unsafe and prevent the edit.
@@ -251,6 +321,7 @@ Pseudo example for `Widget.xml`:
 <!-- Before: current-directory, pkg, and source scripts are mixed. -->
 <script uri="pkg:/source/Analytics.brs" />
 <script uri="pkg:/components/shared/Strings.brs" />
+<script uri="lib:/external/Tracker.brs" />
 <script uri="Helpers.brs" />
 <script uri="Widget.brs" />
 ```
@@ -264,6 +335,8 @@ becomes:
 <script uri="pkg:/components/shared/Strings.brs" />
 
 <script uri="pkg:/source/Analytics.brs" />
+
+<script uri="lib:/external/Tracker.brs" />
 ```
 
 ## XML Interface Order
@@ -282,9 +355,9 @@ within the same group packed together.
 
 With section-header comments, headers are treated as fixed run boundaries. The
 rule sorts members within each run but does not move members across runs. A
-field/function class change also starts a new run. This preserves author
-groupings even when the field classification would otherwise place a member in
-a different canonical section.
+transition between `<field>` and `<function>` members also starts a new run.
+This preserves author groupings even when the field classification would
+otherwise place a member in a different canonical section.
 
 A comment on its own line directly above a member moves with that member.
 Floating or trailing comments prevent a needed reorder. If the interface is
@@ -314,6 +387,37 @@ becomes:
     <function name="reset" />
 </interface>
 ```
+
+Pseudo example with section-header comments:
+
+```xml
+<interface>
+    <!-- Properties -->
+    <field id="title" type="string" />
+    <field id="count" type="integer" />
+
+    <!-- Actions -->
+    <function name="refresh" />
+    <function name="close" />
+</interface>
+```
+
+becomes:
+
+```xml
+<interface>
+    <!-- Properties -->
+    <field id="count" type="integer" />
+    <field id="title" type="string" />
+
+    <!-- Actions -->
+    <function name="close" />
+    <function name="refresh" />
+</interface>
+```
+
+The headers stay in place and define fixed runs. The rule sorts inside each run
+but does not move fields or functions across those author-defined boundaries.
 
 ## XML Field Classification
 
@@ -346,11 +450,15 @@ Default classification:
   the field has an `alias=` attribute. Tense/event-like fields without that
   backing are properties.
 - Reads of `m.top.<fieldId>` indicate inbound property usage. Assignment
-  statements indicate outbound production. Non-tensed names remain properties
-  even when written.
+  statements at the start of a line indicate outbound production. Compound
+  assignments such as `+=` count as both read and write. `observeField(...)` and
+  `observeFieldScoped(...)` on the same field count as reads. Comparisons,
+  associative-array values, and other references are reads, not writes.
+  Non-tensed names remain properties even when written.
 - Standalone state participles such as `expanded`, `collapsed`, `checked`,
-  `highlighted`, `hidden`, `pinned`, and `locked` are events when produced and
-  unread, properties when not produced, and ambiguous if both read and written.
+  `unchecked`, `highlighted`, `hidden`, `pinned`, `locked`, and `unlocked` are
+  events when produced and unread, properties when not produced, and ambiguous
+  if both read and written.
 - `enabled`, `disabled`, `selected`, `focused`, and `unfocused` prefer property
   classification even when both read and written.
 - Names with no event-like signal default to property.
@@ -371,7 +479,7 @@ Pseudo example:
 Backing and usage evidence classify those fields. A separate state field that is
 both produced and read remains ambiguous:
 
-```brightscript
+```vb
 sub close()
     m.top.dismissed = true ' produced and event-like, so classified as event
 end sub
@@ -391,7 +499,7 @@ end sub
 `onChange="..."` on `<field>` is discouraged. The rule emits a diagnostic that
 recommends moving observation into `init()` with:
 
-```brightscript
+```vb
 m.top.observeFieldScoped("<fieldId>", "_set<FieldIdAsPascalCase>")
 ```
 
@@ -399,6 +507,8 @@ In CLI project mode, when the XML file and target script are both part of the
 same run, the tool can migrate safely:
 
 - Remove the XML `onChange` attribute.
+- Choose the target script from linked scripts by matching the XML basename,
+  falling back to the only linked script, then to a sibling `<XmlName>.brs`.
 - Insert a missing `m.top.observeFieldScoped(...)` line at the start of `init`.
   If the target script has no `init`, create one at the top of the file.
 - Rename the old handler routine, bare calls, and observer handler strings to
@@ -413,7 +523,11 @@ Pseudo migration:
 <field id="title" type="string" onChange="_onTitleChanged" />
 ```
 
-```brightscript
+```vb
+sub init()
+    _onTitleChanged()
+end sub
+
 sub _onTitleChanged()
 end sub
 ```
@@ -424,9 +538,10 @@ becomes:
 <field id="title" type="string" />
 ```
 
-```brightscript
+```vb
 sub init()
     m.top.observeFieldScoped("title", "_setTitle")
+    _setTitle()
 end sub
 
 sub _setTitle()
@@ -438,13 +553,16 @@ end sub
 - `audit/handler-intent` is currently a no-op compatibility rule.
 - `audit/parameter-naming` expects routine parameters to use the `p_` prefix.
   Safe fixes update the declaration and references inside the routine, but leave
-  associative-array keys and dotted member names alone.
+  associative-array keys, dotted member names, and nested function bodies alone.
 - `audit/ui-node-prefix` expects component-local `findNode(...)` assignments to
   use `m._ui*` member names.
 - Scripts linked from a component XML that extends `Scene`, and scene-level
-  `findNode(...)` receivers, are exempt from the `_ui` rule.
+  `findNode(...)` receivers, are exempt from the `_ui` rule. Scene-level
+  receivers include direct scene objects and local variables assigned from
+  `getScene()`.
 - Animation and Interpolator node handles are exempt from `_ui`, but they still
-  need a private `_` prefix.
+  need a private `_` prefix. Animation and Interpolator ids are read from XML
+  elements whose tag names end in `Animation` or `Interpolator`.
 - `audit/private-member-naming` expects private `m` members to be lowerCamelCase
   with an optional leading `_`.
 - `_`-prefixed ALL_CAPS `m` members are accepted as constants. Unprefixed
@@ -463,30 +581,163 @@ end sub
   strings, and sibling-script call sites when no name collision exists.
 - `_`-prefixed XML `<function name="...">` entries are reported but not
   auto-promoted to public names.
-- `audit/hardcoded-string` flags direct non-empty string literals assigned to
-  `.text`; use `ResourceUtil_getString(...)`.
-- `audit/prefer-dreamsocket-utils` flags selected builtin calls and recommends
-  Dreamsocket helper namespaces such as `StringUtil_*` and `TypeUtil_*`.
+- `audit/hardcoded-string` flags direct non-empty double-quoted string literals
+  assigned to `.text`; use `ResourceUtil_getString(...)`.
+- `audit/prefer-dreamsocket-utils` flags `UCase(...)`, `LCase(...)`,
+  `Mid(...)`, `Instr(...)`, and `Type(...)`, recommending Dreamsocket helper
+  namespaces such as `StringUtil_*` and `TypeUtil_*`.
 
-Pseudo audit example:
+Pseudo routine visibility and member naming example:
 
 ```xml
 <interface>
     <function name="setTitle" />
+    <function name="_legacyPrivate" /> <!-- reported: interface functions are public -->
 </interface>
 ```
 
-```brightscript
-sub setTitle(p_title as string) ' XML interface routines stay public.
-    m._uiTitle = m.top.findNode("titleLabel") ' component-local node handle.
-    m._lastTitle = p_title                    ' private member is lowerCamelCase.
-    m._TITLE_KEY = "home.title"               ' private constant may be _ALL_CAPS.
+```vb
+sub init() ' framework routine, never forced private.
+    m.top.observeFieldScoped("title", "_setTitle")
+end sub
+
+
+
+function HTTPUtil_addQueryParams(p_url as string) as string
+    ' Namespaced global helper form is exempt from component-private prefixing.
+    return p_url
+end function
+
+
+
+sub setTitle(p_title as string) ' XML interface routine stays public.
+    m._lastTitle = p_title      ' private member is lowerCamelCase.
+    m._TITLE_KEY = "home.title" ' private constant may be _ALL_CAPS.
     m._uiTitle.text = ResourceUtil_getString(m._TITLE_KEY)
 end sub
+
+
 
 sub _renderCount(p_count as integer) ' non-interface component routine is private.
     text = StringUtil_toString(p_count)
 end sub
+
+
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    ' Framework observer, never forced private.
+    return false
+end function
+```
+
+Pseudo private routine rename:
+
+```vb
+' Before: renderCount is not declared in the XML interface.
+sub init()
+    m.top.observeFieldScoped("count", "renderCount")
+    renderCount()
+end sub
+
+sub renderCount()
+end sub
+```
+
+becomes:
+
+```vb
+sub init()
+    m.top.observeFieldScoped("count", "_renderCount")
+    _renderCount()
+end sub
+
+
+
+sub _renderCount()
+end sub
+```
+
+Pseudo private member rename:
+
+```vb
+' Before: assigned m members start with uppercase letters.
+m.Title = p_title
+m.TITLE_KEY = "home.title"
+```
+
+becomes:
+
+```vb
+m._title = p_title
+m._TITLE_KEY = "home.title"
+```
+
+Pseudo parameter rename:
+
+```vb
+' Before: parameters lack p_ prefixes.
+sub _renderItem(title as string, Count as integer)
+    label = title
+    meta = { title: title } ' associative-array key stays "title".
+    node.title = title      ' dotted member name stays "title".
+end sub
+```
+
+becomes:
+
+```vb
+sub _renderItem(p_title as string, p_count as integer)
+    label = p_title
+    meta = { title: p_title }
+    node.title = p_title
+end sub
+```
+
+Pseudo UI node handle example:
+
+```xml
+<children>
+    <Label id="titleLabel" />
+    <Animation id="fadeAnimation" />
+</children>
+```
+
+```vb
+' Before: component-local findNode handles are not prefixed.
+sub init()
+    m.titleLabel = m.top.findNode("titleLabel")
+    m.fadeAnimation = m.top.findNode("fadeAnimation")
+end sub
+```
+
+becomes:
+
+```vb
+sub init()
+    m._uiTitleLabel = m.top.findNode("titleLabel") ' component-local UI node.
+    m._fadeAnimation = m.top.findNode("fadeAnimation") ' Animation: private only.
+
+    scene = m.top.getScene()
+    m.globalButton = scene.findNode("globalButton") ' scene-level lookup exempt.
+end sub
+```
+
+Pseudo hardcoded string and utility preference example:
+
+```vb
+' Reported by audit/hardcoded-string.
+m._uiTitle.text = "Play"
+
+' Preferred.
+m._uiTitle.text = ResourceUtil_getString("play.button")
+
+' Reported by audit/prefer-dreamsocket-utils.
+normalized = UCase(p_title)
+kind = Type(value)
+
+' Preferred helper namespaces.
+normalized = StringUtil_trim(p_title) ' choose the appropriate StringUtil_* helper.
+isString = TypeUtil_isString(value)   ' choose the appropriate TypeUtil_* helper.
 ```
 
 ## Default Rule Set
