@@ -1,0 +1,70 @@
+{
+  "name": "@dreamsocket/bsprettier",
+  "version": "0.1.0",
+  "description": "Opinionated formatter and convention auditor for BrightScript, BrighterScript, and SceneGraph XML files",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "bsprettier": "bin/bsprettier.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "bin",
+    "dist",
+    "bsprettier.schema.json",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "npm run build:lib",
+    "build:lib": "tsc -p tsconfig.json",
+    "dev": "tsx src/node.ts",
+    "bench": "tsx scripts/bench.ts",
+    "bench:editor": "tsx scripts/bench-editor.ts",
+    "test": "vitest run --root ../..",
+    "test:watch": "vitest --root ../..",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepare": "npm run build:lib",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@xml-tools/parser": "1.0.11",
+    "brighterscript": "1.0.0-alpha.50",
+    "brighterscript-formatter": "^1.7.23",
+    "cosmiconfig": "^9.0.0",
+    "fast-glob": "^3.3.2",
+    "ignore": "^5.3.1",
+    "picocolors": "^1.0.1",
+    "picomatch": "^2.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "@types/picomatch": "^2.3.4",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "keywords": [
+    "brightscript",
+    "brighterscript",
+    "roku",
+    "scenegraph",
+    "formatter",
+    "prettier"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dreamsocket/bsprettier.git"
+  }
+}

@@ -46,7 +46,7 @@ written to stderr so stdout stays stable for `--check` and `--list-different`.
 Discovered via cosmiconfig: a `bsprettier` key in `package.json`,
 `bsprettier.json`, `bsprettier.config.json`, `.bsprettierrc.json`, or
 `.bsprettierrc`. See
-[`bsprettier.schema.json`](./bsprettier.schema.json) for the full shape.
+[`bsprettier.schema.json`](./packages/cli/bsprettier.schema.json) for the full shape.
 
 ```json
 {
@@ -89,7 +89,7 @@ bsprettier "components/**/*.{brs,bs,xml}" --write
 
 ## Editor integration (VSCode / Cursor)
 
-A companion formatter extension lives in `packages/vscode`. Keep the
+A companion formatter extension lives in `packages/vscode-extension`. Keep the
 RokuCommunity BrighterScript extension installed for language services; the
 bsprettier extension owns only formatting.
 
@@ -102,7 +102,7 @@ npm run package:vscode
 ```
 
 In Cursor/VSCode: `Cmd+Shift+P` → `Extensions: Install from VSIX...` → select
-`packages/vscode/bsprettier-vscode-<version>.vsix` → reload. Bump the extension
+`packages/vscode-extension/bsprettier-vscode-<version>.vsix` → reload. Bump the extension
 `version` before each rebuild so the editor installs the new bundle instead of
 reusing the cached one.
 
@@ -189,11 +189,11 @@ npm run build
 ```
 
 `build` runs `tsc` to emit the package library, CLI, and type declarations
-under `dist/`. The `bsprettier` bin runs directly from that output; there is no
+under `packages/cli/dist/`. The `bsprettier` bin runs directly from that output; there is no
 separate bundle step. To run the CLI from a build without the installed bin:
 
 ```sh
-node dist/node.js "components/**/*.{brs,bs,xml}" --check
+node packages/cli/dist/node.js "components/**/*.{brs,bs,xml}" --check
 ```
 
 To build the VSCode/Cursor extension package:
