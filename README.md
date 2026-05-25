@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="packages/vscode-extension/icon.png" alt="bsprettier" width="128" height="128" />
+</p>
+
 # bsprettier
 
 An opinionated formatter and convention auditor for **BrightScript** (`.brs`),

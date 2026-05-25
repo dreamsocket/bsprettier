@@ -15,6 +15,7 @@
   "engines": {
     "vscode": "^1.90.0"
   },
+  "icon": "icon.png",
   "categories": [
     "Formatters"
   ],
@@ -28,6 +29,7 @@
   "main": "./dist/extension.cjs",
   "files": [
     "dist",
+    "icon.png",
     "LICENSE",
     "README.md",
     "package.json"

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="icon.png" alt="bsprettier" width="128" height="128" />
+</p>
+
 # bsprettier
 
 Formatter integration for VSCode and Cursor for **BrightScript** (`.brs`),
