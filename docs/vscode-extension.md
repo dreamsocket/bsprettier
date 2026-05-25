@@ -139,6 +139,6 @@ results leave the document unchanged and surface a message rather than throwing.
 
 ## Related
 
-- User-facing install, settings, and the XML save chain: the repo `README.md`
-  (§ Editor integration).
+- User-facing install, settings, and the XML save chain:
+  [`../packages/vscode-extension/README.md`](../packages/vscode-extension/README.md).
 - Performance background and measurement: [`performance.md`](./performance.md).
