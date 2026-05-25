@@ -8,7 +8,8 @@ As-built documentation for bsprettier internals. Start here.
 - [vscode-extension.md](./vscode-extension.md) — outline of the VS Code/Cursor
   formatter extension: modes, architecture, key files, and build/packaging.
 - [versioning.md](./versioning.md) — how versions and releases work: independent
-  artifact versions, tag scheme, release trains, and distribution channels.
+  artifact versions, tag scheme, per-artifact releases, and distribution
+  channels.
 - [code-conventions.md](./code-conventions.md) — the rule and convention
   reference: the formatting pipeline, default BRS/BS and XML styles, every rule's
   behavior, audit conventions, and the default rule set.
