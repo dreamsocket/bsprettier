@@ -28,3 +28,16 @@ jobs:
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  # When a vscode-v* release is cut, package the VSIX, attach it to the release,
+  # and publish to Open VSX. Chained in-workflow (not a separate `on: release`
+  # workflow) because release-please creates the release with GITHUB_TOKEN, which
+  # does not trigger cascading workflow events.
+  publish-vscode:
+    name: Publish VSCode extension
+    needs: release-please
+    if: needs.release-please.outputs.vscode_released == 'true'
+    uses: ./.github/workflows/publish-vscode.yml
+    with:
+      tag: ${{ needs.release-please.outputs.vscode_tag }}
+    secrets: inherit
