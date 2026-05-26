@@ -1,7 +1,7 @@
 {
   "name": "bsprettier-vscode",
   "displayName": "bsprettier",
-  "description": "Opinionated BrightScript, BrighterScript, and SceneGraph XML formatter for VS Code and Cursor",
+  "description": "Opinionated BrightScript, BrighterScript, and SceneGraph XML formatter",
   "version": "0.1.8",
   "private": true,
   "license": "MIT",
