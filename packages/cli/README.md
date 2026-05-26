@@ -12,13 +12,48 @@ AI-generated edits. An editor extension is also available — see
 
 Installed from Git today (npmjs publishing is planned but deferred):
 
+Local project install:
+
 ```sh
 npm install --save-dev github:dreamsocket/bsprettier
 ```
 
-The `prepare` script builds the package on install.
+Global install:
+
+```sh
+npm install -g github:dreamsocket/bsprettier
+```
+
+The `prepare` script builds the package on install. A local dev dependency links
+`bsprettier` into `node_modules/.bin`; npm scripts can use it directly, but your
+interactive shell will not see it as `bsprettier` unless you install globally or
+put `node_modules/.bin` on `PATH`.
+
+Recommended local project scripts:
+
+```json
+{
+  "scripts": {
+    "format": "bsprettier \"components/**/*.{brs,bs,xml}\" --write",
+    "format:check": "bsprettier \"components/**/*.{brs,bs,xml}\" --check"
+  }
+}
+```
+
+```sh
+npm run format
+```
+
+For a one-off local run without adding a script:
+
+```sh
+npx --no-install bsprettier "components/**/*.{brs,bs,xml}" --write
+```
 
 ## Usage
+
+Use these commands directly after a global install, or inside npm scripts after a
+local install:
 
 ```sh
 bsprettier "components/**/*.{brs,bs,xml}" --check
@@ -40,6 +75,7 @@ bsprettier --stdin-filepath components/example/Foo.brs < Foo.brs
 | `--verbose` | Per-rule summary in `--check` output. |
 | `--progress` | Force progress output to stderr, including completed/total work and ETA. |
 | `--no-progress` | Disable automatic progress output. |
+| `-h`, `--help` | Show CLI usage and options. |
 
 `--check`, `--write`, and `--list-different` are mutually exclusive.
 
@@ -48,12 +84,8 @@ written to stderr so stdout stays stable for `--check` and `--list-different`.
 
 ## Configuration
 
-Discovered via cosmiconfig: a `bsprettier` key in `package.json`,
-`bsprettier.json`, `bsprettier.config.json`, `.bsprettierrc.json`, or
-`.bsprettierrc`. See [`bsprettier.schema.json`](./bsprettier.schema.json) for the
-full shape, and the
-[code conventions reference](https://github.com/dreamsocket/bsprettier/blob/main/docs/code-conventions.md)
-for what each rule does.
+The CLI uses the shared bsprettier config file. Put config in `bsprettier.json`
+or another supported config location, or pass an explicit path with `--config`.
 
 ```json
 {
@@ -67,13 +99,9 @@ for what each rule does.
 }
 ```
 
-Severity: `error` and `warn` both report diagnostics and apply safe fixes.
-`--check` fails when output would change or a parse/conflict error occurs;
-diagnostic-only messages do not currently change the exit status. `info` is
-diagnostic-only, and `off` disables a rule.
-
-`brighterscript-formatter` options can be partially overridden with the top-level
-`formatter` key, or disabled entirely with `"formatter": null`.
+See the
+[configuration reference](https://github.com/dreamsocket/bsprettier/blob/main/docs/configuration.md)
+for discovery rules, severity behavior, formatter options, and schema details.
 
 ### Inline suppression
 

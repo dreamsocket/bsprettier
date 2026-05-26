@@ -34,7 +34,9 @@ Setting `bsprettier.editor.mode`, default `project`:
   or the lowest-risk path is wanted.
 
 Both modes load config fresh per format request, so config edits are picked up
-without reloading the editor.
+without reloading the editor. Config discovery, `bsprettier.json`, severity, and
+formatter options are documented in the shared
+[configuration reference](./configuration.md).
 
 ## Architecture
 
@@ -117,8 +119,7 @@ These bundle flags are load-bearing — dropping any one silently breaks the VSI
 
 For local VSIX testing, **bump the extension `version` before each rebuild** —
 VSCode key installs by version, so reusing a version can leave the stale
-bundle loaded. (Once release-please owns versioning, the release PR does this; see
-`RELEASE_HANDOFF.md`.)
+bundle loaded. Once release-please owns versioning, the release PR does this.
 
 ## Coexistence with BrighterScript
 

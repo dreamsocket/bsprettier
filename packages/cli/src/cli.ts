@@ -45,7 +45,7 @@ Options:
   --verbose           Per-rule summary in --check output.
   --progress          Force progress output to stderr.
   --no-progress       Disable automatic progress output.
-  --help              Show this message.
+  -h, --help          Show this message.
 
 Exit codes: 0 clean/written, 1 --check found changes, 2 parse/conflict error,
 3 CLI usage error.`;

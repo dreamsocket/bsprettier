@@ -63,7 +63,7 @@ project-aware ~4.4ms/request, cold CLI stdin ~492ms/request.
   regenerated unformatted each run, so it measures the real cold first run.
 - `npm run bench -- --per-rule` — adds a per-rule breakdown (has timing
   overhead; use it to *rank* rules, read the clean run for slice totals).
-- `npm run bench -- --corpus=../../nbc/roku-app` — read-only spot check against
+- `npm run bench -- --corpus=../../dreamsocket/roku-app` — read-only spot check against
   the real Roku app.
 - `npm run bench:editor` — editor-on-save latency/memory (separate from
   `npm run bench`; do not conflate the two workloads).
@@ -104,5 +104,5 @@ Recorded so these aren't re-explored:
 ## Distribution note
 
 Shipped via Git (`npm install dreamsocket/bsprettier#<tag>`), not the registry.
-`dist/` is gitignored, built by `prepare` on install. No bundle for the core
-CLI.
+The root package exposes the `bsprettier` bin, and `dist/` is gitignored and
+built by `prepare` on install. No bundle for the core CLI.
