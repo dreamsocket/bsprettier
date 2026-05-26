@@ -11,26 +11,16 @@ Dreamsocket conventions.
 bsprettier is deterministic, idempotent, and safe to run on save or after
 AI-generated edits.
 
-## Quick start
-
-```sh
-npm install --save-dev github:dreamsocket/bsprettier
-bsprettier "components/**/*.{brs,bs,xml}" --write
-```
-
-See [`packages/cli`](./packages/cli) for full CLI usage, configuration, and the
-programmatic API; install the editor extension from
-[`packages/vscode-extension`](./packages/vscode-extension).
-
 ## Packages
 
 This is a monorepo of two independently versioned artifacts:
 
-- [`packages/cli`](./packages/cli) — `@dreamsocket/bsprettier`, the CLI and
-  library. Install, usage, flags, configuration, suppression, programmatic API.
+- [`packages/cli`](./packages/cli) — `@dreamsocket/bsprettier`, the command-line
+  formatter and programmatic API. See its README for install, usage, flags,
+  configuration, suppression, and API details.
 - [`packages/vscode-extension`](./packages/vscode-extension) — `bsprettier-vscode`,
-  the VSCode formatter extension. Install, settings, modes, on-save
-  behavior.
+  the VSCode compatible formatter extension. See its README for install,
+  settings, modes, and on-save behavior.
 
 ## Documentation
 
@@ -39,13 +29,13 @@ This is a monorepo of two independently versioned artifacts:
   BRS/BS/XML/audit conventions enforced.
 - [`docs/vscode-extension.md`](./docs/vscode-extension.md) — extension internals:
   architecture, key files, and the load-bearing build constraints.
+- [`docs/configuration.md`](./docs/configuration.md) — shared CLI and extension
+  config: discovery, `bsprettier.json`, severity, formatter options, and schema.
 - [`docs/performance.md`](./docs/performance.md) — how performance was implemented
   and how it is measured.
-- [`docs/versioning.md`](./docs/versioning.md) — versions, tags, releases, and
+- [`docs/releases.md`](./docs/releases.md) — releases, versions, tags, and
   distribution channels.
 - [`docs/index.md`](./docs/index.md) — docs hub.
-
-For in-progress distribution / CI / release work, see [`ROADMAP.md`](./ROADMAP.md).
 
 ## Development
 

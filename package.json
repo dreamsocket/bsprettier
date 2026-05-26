@@ -1,9 +1,35 @@
 {
-  "name": "bsprettier-monorepo",
+  "name": "bsprettier",
+  "version": "0.1.1",
+  "description": "Opinionated formatter and convention auditor for BrightScript, BrighterScript, and SceneGraph XML files",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "workspaces": [
     "packages/*"
+  ],
+  "bin": {
+    "bsprettier": "packages/cli/bin/bsprettier.js"
+  },
+  "main": "packages/cli/dist/index.js",
+  "types": "packages/cli/dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./packages/cli/dist/index.d.ts",
+      "import": "./packages/cli/dist/index.js"
+    },
+    "./bsprettier.schema.json": "./packages/cli/bsprettier.schema.json"
+  },
+  "files": [
+    "packages/cli/bin",
+    "packages/cli/dist",
+    "packages/cli/bsprettier.schema.json",
+    "packages/cli/README.md",
+    "packages/cli/CHANGELOG.md",
+    "packages/cli/LICENSE",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "npm run build:all",
@@ -16,7 +42,23 @@
     "bench:editor": "npm --workspace packages/cli run bench:editor",
     "test": "npm --workspace packages/cli test",
     "test:watch": "npm --workspace packages/cli run test:watch",
-    "typecheck": "npm --workspace packages/cli run typecheck"
+    "typecheck": "npm --workspace packages/cli run typecheck",
+    "prepare": "npm run build:lib"
+  },
+  "dependencies": {
+    "@xml-tools/parser": "1.0.11",
+    "brighterscript": "1.0.0-alpha.50",
+    "brighterscript-formatter": "^1.7.23",
+    "cosmiconfig": "^9.0.0",
+    "fast-glob": "^3.3.2",
+    "ignore": "^5.3.1",
+    "picocolors": "^1.0.1",
+    "picomatch": "^2.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "@types/picomatch": "^2.3.4",
+    "typescript": "^5.5.0"
   },
   "engines": {
     "node": ">=20"

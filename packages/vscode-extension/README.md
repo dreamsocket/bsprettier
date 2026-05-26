@@ -48,6 +48,28 @@ bsprettier is the default formatter and runs on save directly.
 | `bsprettier.configPath` | Optional explicit config path (relative to the workspace root). If omitted, config discovery searches upward. |
 | `bsprettier.trace` | `false` by default. Set `true` to log per-format invocations, timings, and XML save-participant activity to the `bsprettier` output channel. Errors and fallbacks always log. |
 
+### Configuration
+
+The extension uses the same shared config file as the CLI. Put project config in
+`bsprettier.json` or another supported config location, or set
+`bsprettier.configPath` to an explicit path relative to the workspace root.
+
+```json
+{
+  "include": ["components/**/*.{brs,bs,xml}"],
+  "ignore": ["**/roku_modules/**"],
+  "rules": {
+    "brs/declaration-order": "error",
+    "xml/no-onchange-field": "warn",
+    "audit/hardcoded-string": "off"
+  }
+}
+```
+
+See the
+[configuration reference](https://github.com/dreamsocket/bsprettier/blob/main/docs/configuration.md)
+for discovery rules, severity behavior, formatter options, and schema details.
+
 ### Modes
 
 - `project` keeps a warm workspace source map and project context, so linked
