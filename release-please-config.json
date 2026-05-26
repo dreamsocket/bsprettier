@@ -11,7 +11,13 @@
     "packages/cli": {
       "release-type": "node",
       "package-name": "@dreamsocket/bsprettier",
-      "component": "cli"
+      "component": "cli",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "packages/cli/README.md"
+        }
+      ]
     },
     "packages/vscode-extension": {
       "release-type": "node",
