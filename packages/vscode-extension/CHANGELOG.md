@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/dreamsocket/bsprettier/compare/vscode-v0.2.0...vscode-v0.2.1) (2026-05-26)
+
+
+### Bug Fixes
+
+* **vscode:** use absolute README icon URL so it renders on Open VSX ([5fe09b4](https://github.com/dreamsocket/bsprettier/commit/5fe09b43836651a32953d4b97b870dc60dbb598a))
+
 ## [0.2.0](https://github.com/dreamsocket/bsprettier/compare/vscode-v0.1.8...vscode-v0.2.0) (2026-05-26)
 
 
