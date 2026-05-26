@@ -12,7 +12,7 @@ are relative to `packages/cli/` unless noted.
    file. A *cold* CLI invocation here spent ~400ms loading BrighterScript's
    module graph and only ~5–10ms actually formatting — so format-phase
    optimizations do nothing for it. This bottleneck was addressed architecturally
-   by keeping BrighterScript warm in the VS Code/Cursor extension host rather than
+   by keeping BrighterScript warm in the VS Code extension host rather than
    by optimizing format code. See [`vscode-extension.md`](./vscode-extension.md).
 
 ## Invariants the work held to

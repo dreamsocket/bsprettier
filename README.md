@@ -29,7 +29,7 @@ This is a monorepo of two independently versioned artifacts:
 - [`packages/cli`](./packages/cli) — `@dreamsocket/bsprettier`, the CLI and
   library. Install, usage, flags, configuration, suppression, programmatic API.
 - [`packages/vscode-extension`](./packages/vscode-extension) — `bsprettier-vscode`,
-  the VSCode/Cursor formatter extension. Install, settings, modes, on-save
+  the VSCode formatter extension. Install, settings, modes, on-save
   behavior.
 
 ## Documentation

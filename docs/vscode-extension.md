@@ -1,4 +1,4 @@
-# VS Code / Cursor extension — outline
+# VS Code compatible extension — outline
 
 As-built outline of the `bsprettier` editor extension. It documents the shape
 that shipped; it is not a plan. CLI-package paths are relative to
@@ -6,7 +6,7 @@ that shipped; it is not a plan. CLI-package paths are relative to
 
 ## What it is
 
-A VS Code/Cursor formatter extension that keeps `bsprettier` and BrighterScript
+A VS Code compatible IDE formatter extension that keeps `bsprettier` and BrighterScript
 warm inside the editor extension host, so on-save formatting avoids the ~400ms
 cold BrighterScript load that a fresh CLI process pays (see
 [`performance.md`](./performance.md)). It owns **only** formatting via VS Code's
@@ -39,7 +39,7 @@ without reloading the editor.
 ## Architecture
 
 ```
-VS Code/Cursor format request
+VS Code IDE format request
         │
         ▼
 extension host (packages/vscode-extension/src/extension.ts)
@@ -116,7 +116,7 @@ These bundle flags are load-bearing — dropping any one silently breaks the VSI
   bundle reduction.)
 
 For local VSIX testing, **bump the extension `version` before each rebuild** —
-Cursor/VSCode key installs by version, so reusing a version can leave the stale
+VSCode key installs by version, so reusing a version can leave the stale
 bundle loaded. (Once release-please owns versioning, the release PR does this; see
 `RELEASE_HANDOFF.md`.)
 

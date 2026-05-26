@@ -8,7 +8,7 @@ This is a monorepo of independently built, tested, versioned, and published
 artifacts:
 
 - **CLI / library** — `@dreamsocket/bsprettier`
-- **VS Code / Cursor extension** — `bsprettier-vscode`
+- **VS Code extension** — `bsprettier-vscode`
 
 ## Independent artifact versions
 
@@ -66,7 +66,7 @@ keep a single obvious "current" entry, the extension release is marked GitHub
   `prepare` script builds it on install). Publishing to **npmjs.org** is planned
   but deferred.
 - **Extension**: the **VSIX** is attached to the `vscode-v*` GitHub Release
-  **and** published to **Open VSX** (the registry Cursor installs from). The
+  **and** published to **Open VSX** (the registry other VS Code compatible IDEs install from). The
   Microsoft Marketplace is an optional future channel.
 
 ## Why a monorepo (not separate repos)
