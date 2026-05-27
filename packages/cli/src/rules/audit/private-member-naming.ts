@@ -13,6 +13,12 @@ function isFrameworkRoutine(name: string): boolean {
   return lower === "init" || lower === "onkeyevent";
 }
 
+const NATIVE_GLOBAL_CALL_EXCEPTIONS = new Set(["parsejson"]);
+
+function isNativeGlobalCallException(name: string): boolean {
+  return NATIVE_GLOBAL_CALL_EXCEPTIONS.has(name.toLowerCase());
+}
+
 /**
  * Namespaced global helpers follow the `Namespace_method` convention
  * (`StringUtil_trim`, `HTTPUtil_addQueryParams`, `DeviceUtil_getId`). Any
@@ -99,6 +105,28 @@ function computeRenamesForRoutines(
   return map;
 }
 
+/**
+ * Repair aliases left behind by an earlier or partial run. If a script already
+ * declares `_helper` and no `helper` declaration exists, references to `helper`
+ * are stale references to the private routine and should move to `_helper`.
+ */
+function computePrivateAliasRenames(
+  routines: BrsRoutine[],
+  publicNames: Set<string>,
+): Map<string, string> {
+  const byName = new Set(routines.map((r) => r.name.toLowerCase()));
+  const map = new Map<string, string>();
+  for (const routine of routines) {
+    if (!routine.name.startsWith("_") || routine.name.length === 1) continue;
+    const publicName = routine.name.slice(1);
+    if (isFrameworkRoutine(publicName) || isNamespacedGlobal(publicName)) continue;
+    if (publicNames.has(publicName.toLowerCase())) continue;
+    if (byName.has(publicName.toLowerCase())) continue;
+    map.set(publicName.toLowerCase(), routine.name);
+  }
+  return map;
+}
+
 function previousToken(tokens: BscToken[], index: number): BscToken | undefined {
   for (let i = index - 1; i >= 0; i--) {
     const token = tokens[i]!;
@@ -115,22 +143,89 @@ function nextToken(tokens: BscToken[], index: number): BscToken | undefined {
   return undefined;
 }
 
+function previousTokenIndex(tokens: BscToken[], index: number): number {
+  for (let i = index - 1; i >= 0; i--) {
+    const token = tokens[i]!;
+    if (token.kind !== "Newline" && token.kind !== "Comment") return i;
+  }
+  return -1;
+}
+
+function nextTokenIndex(tokens: BscToken[], index: number): number {
+  for (let i = index + 1; i < tokens.length; i++) {
+    const token = tokens[i]!;
+    if (token.kind !== "Newline" && token.kind !== "Comment") return i;
+  }
+  return -1;
+}
+
+function stringLiteralValue(token: BscToken): string | null {
+  const text = token.text;
+  if (text.length < 2) return null;
+  const quote = text[0];
+  if ((quote !== '"' && quote !== "'") || text[text.length - 1] !== quote) {
+    return null;
+  }
+  return text.slice(1, -1);
+}
+
+function isMIdentifier(token: BscToken | undefined): boolean {
+  return token?.kind === "Identifier" && token.text.toLowerCase() === "m";
+}
+
+function mayHaveIndexedStringKey(source: string): boolean {
+  return source.includes('["') || source.includes("['");
+}
+
+function isIndexedFunctionExportValue(
+  tokens: BscToken[],
+  index: number,
+  replacement: string,
+): boolean {
+  const equal = previousTokenIndex(tokens, index);
+  const right = equal >= 0 ? previousTokenIndex(tokens, equal) : -1;
+  const keyIndex = right >= 0 ? previousTokenIndex(tokens, right) : -1;
+  const left = keyIndex >= 0 ? previousTokenIndex(tokens, keyIndex) : -1;
+  const receiver = left >= 0 ? previousTokenIndex(tokens, left) : -1;
+  if (!isMIdentifier(tokens[receiver])) return false;
+  if (tokens[left]?.kind !== "LeftSquareBracket") return false;
+  const key = tokens[keyIndex];
+  if (key?.kind !== "StringLiteral") return false;
+  if (tokens[right]?.kind !== "RightSquareBracket") return false;
+  if (tokens[equal]?.kind !== "Equal") return false;
+
+  const keyValue = stringLiteralValue(key)?.toLowerCase();
+  if (!keyValue) return false;
+  return (
+    keyValue === tokens[index]!.text.toLowerCase() ||
+    keyValue === replacement.toLowerCase()
+  );
+}
+
 function routineRenameEdits(
   ctx: BrsRuleContext,
   renames: Map<string, string>,
 ): Edit[] {
   const edits: Edit[] = observerHandlerStringEdits(ctx.source, renames);
+  const mayHaveIndexedExport = mayHaveIndexedStringKey(ctx.source);
+
   for (let i = 0; i < ctx.parse.tokens.length; i++) {
     const token = ctx.parse.tokens[i]!;
+    if (token.kind !== "Identifier" || !token.location) continue;
     const replacement = renames.get(token.text.toLowerCase());
-    if (!replacement || token.kind !== "Identifier" || !token.location) continue;
+    if (!replacement) continue;
 
     const previous = previousToken(ctx.parse.tokens, i);
     const next = nextToken(ctx.parse.tokens, i);
     const isDeclaration =
       previous?.kind === "Function" || previous?.kind === "Sub";
     const isBareCall = previous?.kind !== "Dot" && next?.kind === "LeftParen";
-    if (!isDeclaration && !isBareCall) continue;
+    if (isBareCall && isNativeGlobalCallException(token.text)) continue;
+
+    const isIndexedExportValue =
+      mayHaveIndexedExport &&
+      isIndexedFunctionExportValue(ctx.parse.tokens, i, replacement);
+    if (!isDeclaration && !isBareCall && !isIndexedExportValue) continue;
 
     const span = ctx.parse.lineIndex.rangeToSpan(token.location.range);
     edits.push({
@@ -396,7 +491,10 @@ export const privateMemberNaming: BrsRule = {
     // declare a matching name — promoting a private routine to public is never a
     // safe assumption (see AbstractHTTPService._execute). Only the
     // private-prefixing direction below is applied.
-    const renames = new Map<string, string>();
+    const renames = computePrivateAliasRenames(
+      ctx.parse.topLevelFunctions,
+      publicNames,
+    );
 
     if (interfaceInfo.requiresPrivatePrefixes) {
       for (const routine of privateRoutineCandidates(
@@ -439,6 +537,12 @@ export const privateMemberNaming: BrsRule = {
     for (const [scriptPath] of interfaceInfo.scopeSources) {
       const parsed = ctx.projectContext?.getBrsParse(scriptPath);
       if (!parsed || parsed.fatal) continue;
+      for (const [from, to] of computePrivateAliasRenames(
+        parsed.topLevelFunctions,
+        publicNames,
+      )) {
+        if (!scopeRenames.has(from)) scopeRenames.set(from, to);
+      }
       for (const [from, to] of computeRenamesForRoutines(
         parsed.topLevelFunctions,
         publicNames,
