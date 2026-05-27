@@ -1,6 +1,6 @@
 {
   "name": "@dreamsocket/bsprettier",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Opinionated formatter and convention auditor for BrightScript, BrighterScript, and SceneGraph XML files",
   "license": "MIT",
   "type": "module",
