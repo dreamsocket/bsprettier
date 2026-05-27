@@ -12,16 +12,25 @@ AI-generated edits. An editor extension is also available — see
 
 Installed from Git today (npmjs publishing is planned but deferred):
 
-Local project install:
+For a stable install, pin a CLI release tag:
+
+Current stable CLI tag: `cli-v0.1.1` <!-- x-release-please-version -->
+
+```sh
+npm install --save-dev github:dreamsocket/bsprettier#cli-v0.1.1 # x-release-please-version
+```
+
+For a global stable install:
+
+```sh
+npm install -g github:dreamsocket/bsprettier#cli-v0.1.1 # x-release-please-version
+```
+
+To track the current `main` branch instead of the latest stable release, omit the
+tag:
 
 ```sh
 npm install --save-dev github:dreamsocket/bsprettier
-```
-
-Global install:
-
-```sh
-npm install -g github:dreamsocket/bsprettier
 ```
 
 The `prepare` script builds the package on install. A local dev dependency links
