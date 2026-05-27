@@ -71,7 +71,7 @@ describe("audit/ui-node-prefix", () => {
     expect(result.diagnostics).toEqual([]);
   });
 
-  it("does not require _ui prefixes for scene findNode members", () => {
+  it("prefixes scene findNode members with `_` rather than `_ui`", () => {
     const src = brsSource`
       sub init()
           m.contentGrid = m.scene.findNode("contentGrid")
@@ -86,9 +86,15 @@ describe("audit/ui-node-prefix", () => {
     });
 
     expect(result.diagnostics).toEqual([]);
+    expect(result.output).toContain(
+      '    m._contentGrid = m.scene.findNode("contentGrid")',
+    );
+    expect(result.output).toContain(
+      '    m._hero = m.top.getScene().findNode("hero")',
+    );
   });
 
-  it("does not require _ui prefixes for findNode on a local scene variable", () => {
+  it("leaves already-`_`-prefixed scene findNode members alone", () => {
     const src = brsSource`
       sub init()
           _scene = m.top.getScene()
@@ -104,6 +110,9 @@ describe("audit/ui-node-prefix", () => {
     });
 
     expect(result.diagnostics).toEqual([]);
+    expect(result.output).toContain(
+      '    m._mParticle = _scene.findNode("mParticle")',
+    );
   });
 
   it("renames a UI member but leaves _-prefixed Animation/Interpolator members alone", () => {
