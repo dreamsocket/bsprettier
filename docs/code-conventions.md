@@ -121,6 +121,9 @@ Classification rules:
 - `onKeyEvent` is an observer and sorts as `_onKeyEvent`.
 - Names beginning with `_on` are observers.
 - Other names beginning with `_` are private.
+- Names with `_` after the first character, such as `HTTPUtil_addQueryParams`,
+  are treated as public utility functions that use the first segment as a
+  rudimentary namespace/package prefix.
 - All other routines are public.
 - Routines sort ASCII-ascending within a cohort, using case-sensitive JavaScript
   string order.
@@ -575,7 +578,17 @@ end sub
   and `onKeyEvent`.
 - Same-directory component-local linked script routines are private unless they
   are declared in the XML interface, are framework routines, or use a namespaced
-  global helper form such as `HTTPUtil_addQueryParams`.
+  global helper form.
+- A routine name with `_` anywhere after the first character is treated as a
+  namespaced/global utility helper. The segment before `_` is the package-like
+  prefix used to avoid collisions, for example `HTTPUtil_addQueryParams` or
+  `StringUtil_trim`. A leading `_` still means private, so `_helper` and
+  `_HTTPUtil_addQueryParams` are not utility exceptions.
+- A top-level function that returns an associative array containing function or
+  sub members is treated as a public constructor/factory for an interface-like
+  object. It is exempt from component-private prefixing in the same way as
+  namespaced utility helpers, because callers are expected to create the object
+  and use the returned methods.
 - Scripts linked from outside the component directory are not forced private.
 - Safe private routine fixes update declarations, bare calls, observer handler
   strings, and sibling-script call sites when no name collision exists.
@@ -606,6 +619,22 @@ end sub
 function HTTPUtil_addQueryParams(p_url as string) as string
     ' Namespaced global helper form is exempt from component-private prefixing.
     return p_url
+end function
+
+
+
+function HTTPRequest() as Object
+    ' Constructor/factory form: returns an interface-like associative array.
+    return {
+        _url: invalid,
+        url: function(p_value as String)
+            m._url = p_value
+            return m
+        end function,
+        build: function() as Object
+            return { url: m._url }
+        end function
+    }
 end function
 
 
