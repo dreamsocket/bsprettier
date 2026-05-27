@@ -177,28 +177,6 @@ function mayHaveIndexedStringKey(source: string): boolean {
   return source.includes('["') || source.includes("['");
 }
 
-function isIndexedFunctionExportKey(
-  tokens: BscToken[],
-  index: number,
-  key: string,
-  replacement: string,
-): boolean {
-  const left = previousTokenIndex(tokens, index);
-  const receiver = left >= 0 ? previousTokenIndex(tokens, left) : -1;
-  const right = nextTokenIndex(tokens, index);
-  const equal = right >= 0 ? nextTokenIndex(tokens, right) : -1;
-  const valueIndex = equal >= 0 ? nextTokenIndex(tokens, equal) : -1;
-  if (!isMIdentifier(tokens[receiver])) return false;
-  if (tokens[left]?.kind !== "LeftSquareBracket") return false;
-  if (tokens[right]?.kind !== "RightSquareBracket") return false;
-  if (tokens[equal]?.kind !== "Equal") return false;
-
-  const value = tokens[valueIndex];
-  if (value?.kind !== "Identifier") return false;
-  const valueKey = value.text.toLowerCase();
-  return valueKey === key.toLowerCase() || valueKey === replacement.toLowerCase();
-}
-
 function isIndexedFunctionExportValue(
   tokens: BscToken[],
   index: number,
@@ -256,30 +234,6 @@ function routineRenameEdits(
       length: span.length,
       replacement,
     });
-  }
-
-  if (mayHaveIndexedExport) {
-    for (let i = 0; i < ctx.parse.tokens.length; i++) {
-      const token = ctx.parse.tokens[i]!;
-      if (token.kind !== "StringLiteral" || !token.location) continue;
-      const value = stringLiteralValue(token);
-      if (!value) continue;
-      const replacement = renames.get(value.toLowerCase());
-      if (!replacement) continue;
-      if (
-        !isIndexedFunctionExportKey(ctx.parse.tokens, i, value, replacement)
-      ) {
-        continue;
-      }
-
-      const span = ctx.parse.lineIndex.rangeToSpan(token.location.range);
-      edits.push({
-        ruleId: RULE_ID,
-        offset: span.offset + 1,
-        length: Math.max(0, span.length - 2),
-        replacement,
-      });
-    }
   }
   return edits;
 }

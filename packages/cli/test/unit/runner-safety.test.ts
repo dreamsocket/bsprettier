@@ -1120,7 +1120,7 @@ describe("runner safety", () => {
 
     expect(result.diagnostics).toEqual([]);
     expect(result.output).toContain(
-      '    m["_createComponent"] = _createComponent',
+      '    m["createComponent"] = _createComponent',
     );
     expect(result.output).toContain("function _createComponent(");
 
@@ -1147,7 +1147,7 @@ describe("runner safety", () => {
 
     expect(repaired.diagnostics).toEqual([]);
     expect(repaired.output).toContain(
-      '    m["_createComponent"] = _createComponent',
+      '    m["createComponent"] = _createComponent',
     );
     expect(repaired.output).toContain("function _createComponent(");
   });
