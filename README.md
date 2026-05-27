@@ -43,10 +43,17 @@ npm-workspaces monorepo (`packages/cli`, `packages/vscode-extension`):
 
 ```sh
 npm install
-npm run build        # build:lib + build:vscode
+npm run build           # build:lib (CLI runtime) + build:vscode (type-check only)
+npm run package:vscode  # produces packages/vscode-extension/*.vsix
 npm test
 npm run typecheck
 ```
+
+- `build:lib` compiles the CLI to `packages/cli/dist/` — this is the
+  runtime artifact loaded by `bin/bsprettier.js`.
+- `build:vscode` runs `tsc` on the extension for type-checking; its emitted
+  `.js` is **not** what VS Code loads. The loadable bundle
+  (`dist/extension.cjs`) and `.vsix` are produced by `package:vscode`.
 
 ## License
 
