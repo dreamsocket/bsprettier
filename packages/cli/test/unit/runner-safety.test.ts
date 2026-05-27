@@ -233,6 +233,29 @@ describe("runner safety", () => {
     expect(result.diagnostics[0]?.message).toContain("Multiple init");
   });
 
+  it("orders internally underscored utility routines with public routines", () => {
+    const src =
+      "sub _privateHelper()\n" +
+      "end sub\n\n" +
+      "function HTTPUtil_addQueryParams()\n" +
+      "end function\n\n" +
+      "sub init()\n" +
+      "end sub\n";
+    const result = formatFile({
+      filePath: "UtilityOrder.brs",
+      source: src,
+      config,
+      onlyRules: new Set(["brs/declaration-order"]),
+    });
+
+    expect(result.output.indexOf("sub init()")).toBeLessThan(
+      result.output.indexOf("function HTTPUtil_addQueryParams()"),
+    );
+    expect(result.output.indexOf("function HTTPUtil_addQueryParams()")).toBeLessThan(
+      result.output.indexOf("sub _privateHelper()"),
+    );
+  });
+
   it("does not reorder interface members when comments sit between them", () => {
     const src =
       '<component name="W" extends="Group">\n' +
@@ -1080,6 +1103,9 @@ describe("runner safety", () => {
       "end sub\n\n" +
       "function HTTPUtil_addQueryParams(url as string) as string\n" +
       "    return url\n" +
+      "end function\n\n" +
+      "function HTTPUtil_2dEncode(url as string) as string\n" +
+      "    return url\n" +
       "end function\n";
     const result = formatFile({
       filePath: brsPath,
@@ -1092,10 +1118,93 @@ describe("runner safety", () => {
       onlyRules: new Set(["audit/private-member-naming"]),
     });
     // WidgetHelpers.brs is linked (same directory as Widget.xml), so its
-    // component-local `helper` becomes private; `HTTPUtil_addQueryParams` is a
-    // namespaced global utility and stays public.
+    // component-local `helper` becomes private; internally underscored
+    // namespaced global utilities stay public.
     expect(result.output).toContain("sub _helper()");
     expect(result.output).toContain("function HTTPUtil_addQueryParams(");
+    expect(result.output).toContain("function HTTPUtil_2dEncode(");
+  });
+
+  it("keeps constructor-style functions returning method interfaces public", () => {
+    const xmlPath = "components/Widget.xml";
+    const brsPath = "components/WidgetHelpers.brs";
+    const xml =
+      '<component name="Widget" extends="Group">\n' +
+      '  <script type="text/brightscript" uri="WidgetHelpers.brs" />\n' +
+      "</component>\n";
+    const brs =
+      "function HTTPRequest() as Object\n" +
+      "    return {\n" +
+      "        _url: invalid,\n" +
+      "        url: function(p_value as String)\n" +
+      "            m._url = p_value\n" +
+      "            return m\n" +
+      "        end function,\n" +
+      "        build: function() as Object\n" +
+      "            return { url: m._url }\n" +
+      "        end function\n" +
+      "    }\n" +
+      "end function\n\n" +
+      "function requestDefaults() as Object\n" +
+      "    return { method: \"GET\" }\n" +
+      "end function\n";
+    const result = formatFile({
+      filePath: brsPath,
+      source: brs,
+      config,
+      projectSources: new Map([
+        [xmlPath, xml],
+        [brsPath, brs],
+      ]),
+      onlyRules: new Set(["audit/private-member-naming"]),
+    });
+
+    expect(result.output).toContain("function HTTPRequest()");
+    expect(result.output).toContain("function _requestDefaults()");
+  });
+
+  it("does not rewrite sibling call sites for constructor-style functions", () => {
+    const xmlPath = "components/Widget.xml";
+    const widgetPath = "components/Widget.brs";
+    const requestPath = "components/HTTPRequest.brs";
+    const xml =
+      '<component name="Widget" extends="Group">\n' +
+      '  <script type="text/brightscript" uri="Widget.brs" />\n' +
+      '  <script type="text/brightscript" uri="HTTPRequest.brs" />\n' +
+      "  <interface>\n" +
+      '    <function name="show" />\n' +
+      "  </interface>\n" +
+      "</component>\n";
+    const widget =
+      "sub show()\n" +
+      "    request = HTTPRequest()\n" +
+      "    helper()\n" +
+      "end sub\n";
+    const request =
+      "function HTTPRequest() as Object\n" +
+      "    return {\n" +
+      "        get: function()\n" +
+      "            return m\n" +
+      "        end function\n" +
+      "    }\n" +
+      "end function\n\n" +
+      "sub helper()\n" +
+      "end sub\n";
+    const result = formatFile({
+      filePath: widgetPath,
+      source: widget,
+      config,
+      projectSources: new Map([
+        [xmlPath, xml],
+        [widgetPath, widget],
+        [requestPath, request],
+      ]),
+      onlyRules: new Set(["audit/private-member-naming"]),
+    });
+
+    expect(result.output).toContain("    request = HTTPRequest()");
+    expect(result.output).toContain("    _helper()");
+    expect(result.output).not.toContain("_HTTPRequest()");
   });
 
   it("does not enforce private prefixes for same-named utilities linked from another component", () => {

@@ -15,13 +15,49 @@ function isFrameworkRoutine(name: string): boolean {
 
 /**
  * Namespaced global helpers follow the `Namespace_method` convention
- * (`StringUtil_trim`, `HTTPUtil_addQueryParams`, `DeviceUtil_getId`). They are
- * shared, globally-scoped functions called from many components, never
- * component-private members, so they are exempt from private-prefixing even when
- * they live in a component's directory.
+ * (`StringUtil_trim`, `HTTPUtil_addQueryParams`, `DeviceUtil_getId`). Any
+ * underscore after the first character is treated as the package/namespace
+ * separator. A leading underscore still marks a private routine, so it does not
+ * qualify for this utility exception.
  */
 function isNamespacedGlobal(name: string): boolean {
-  return /^[A-Za-z][A-Za-z0-9]*_[A-Za-z]/.test(name);
+  return name.indexOf("_") > 0;
+}
+
+function isReturnedInterfaceLiteral(node: any): boolean {
+  if (node?.kind !== "AALiteralExpression") return false;
+  return (node.elements ?? []).some(
+    (element: any) => element?.value?.kind === "FunctionExpression",
+  );
+}
+
+function returnsInterfaceLiteral(routine: BrsRoutine): boolean {
+  if (routine.isSub) return false;
+
+  const stack = [...(routine.node.func?.body?.statements ?? [])];
+  const seen = new Set<object>();
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (!node || typeof node !== "object") continue;
+    if (seen.has(node)) continue;
+    seen.add(node);
+    if (node.kind === "FunctionExpression") continue;
+    if (node.kind === "ReturnStatement" && isReturnedInterfaceLiteral(node.value)) {
+      return true;
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "parent" || key === "tokens" || key === "location") continue;
+      if (key === "symbolTable" || key === "visitMode") continue;
+      if (Array.isArray(value)) {
+        stack.push(...value);
+      } else if (value && typeof value === "object") {
+        stack.push(value);
+      }
+    }
+  }
+
+  return false;
 }
 
 function publicRoutineKey(name: string): string {
@@ -37,6 +73,7 @@ function privateRoutineCandidates(
       !routine.name.startsWith("_") &&
       !isFrameworkRoutine(routine.name) &&
       !isNamespacedGlobal(routine.name) &&
+      !returnsInterfaceLiteral(routine) &&
       !publicNames.has(publicRoutineKey(routine.name)),
   );
 }
@@ -318,8 +355,9 @@ function memberRenameEdits(
  * to gain a private `_` prefix (it is never down-cased to lowerCamelCase).
  *
  * In project mode, primary component scripts use `_` for routines not declared
- * in the component XML `<interface>`. Extra linked utility scripts are left
- * public unless the XML explicitly declares their routine in `<interface>`.
+ * in the component XML `<interface>`. Namespaced utility functions and
+ * constructor-style functions that return associative-array interfaces stay
+ * public because they are intended for cross-component callers.
  */
 export const privateMemberNaming: BrsRule = {
   id: RULE_ID,
