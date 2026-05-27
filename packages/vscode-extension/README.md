@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/dreamsocket/bsprettier/main/packages/vscode-extension/icon.png" alt="bsprettier" width="128" height="128" />
-</p>
-
 # bsprettier
 
 VSCode compatible IDE extension that formats **BrightScript** (`.brs`),
