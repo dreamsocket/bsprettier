@@ -80,6 +80,11 @@ for discovery rules, severity behavior, formatter options, and schema details.
 Both modes load config fresh per format request, so config edits are picked up
 without reloading the editor.
 
+Project mode reads saved workspace files for linked XML/BRS context, then
+overlays the document being formatted with its current editor text. The
+extension does not live-analyze or rebuild project context on every keystroke;
+unsaved sibling documents are picked up after they are saved.
+
 ## XML formatting on save
 
 VSCode allows only one default formatter per language, so XML is handled as a
