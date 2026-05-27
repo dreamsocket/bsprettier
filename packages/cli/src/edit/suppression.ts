@@ -28,6 +28,15 @@ export function buildSuppressionMap(
 ): SuppressionMap {
   const lineIndex = new LineIndex(source);
   const lines = new Map<number, Set<string> | "all">();
+
+  // Fast path: the overwhelming majority of files contain no suppression
+  // marker at all. Checking the bare substring before doing any line-splitting
+  // or regex work avoids a per-file allocation/regex pass that, with reparses,
+  // ran several times per file in the multi-phase pipeline.
+  if (source.indexOf("bsprettier-") < 0) {
+    return { fileDisabled: false, lines, lineIndex };
+  }
+
   const rawLines = source.split(/\r?\n/);
 
   // Whole-file disable: must be the first non-blank line.

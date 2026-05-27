@@ -21,6 +21,13 @@ export interface PublicInterfaceInfo {
   scopeSources: Map<string, string>;
 }
 
+export interface FieldUsage {
+  read: boolean;
+  write: boolean;
+}
+
+export type FieldUsageMap = Map<string, FieldUsage>;
+
 const contextCache = new WeakMap<ReadonlyMap<string, string>, ProjectContext>();
 
 export function absolutePath(filePath: string): string {
@@ -138,6 +145,25 @@ export class ProjectContext {
   private readonly componentsByReferencedScript = new Map<string, ProjectXmlFile[]>();
   private readonly brsParseCache = new Map<string, BrsParseResult | null>();
   private readonly publicNamesCache = new Map<string, Set<string>>();
+  // linkedBrsForXml is called once per <field> by classifyField, so an
+  // uncached call rescans every BRS source in the project per field. The
+  // directory key dedupes naturally — same-directory siblings always produce
+  // the same concatenated text. `null` is cached too so the lookup miss path
+  // doesn't re-walk the whole sourceByAbs map.
+  private readonly linkedBrsByDir = new Map<string, string | null>();
+  // Same-directory BRS file list, built lazily on first request for that
+  // directory. Used by linkedBrsForXml and by per-component field-usage maps.
+  private brsByDir: Map<string, string[]> | null = null;
+  // Per-directory `m.top.<field>` usage map. A single linear scan over the
+  // linked BRS classifies every field at once, so xml/interface-section-order
+  // is O(1) per <field> instead of one regex sweep per field.
+  private readonly fieldUsageByDir = new Map<string, FieldUsageMap | null>();
+  // Cache for rule-supplied computations whose result is deterministic in the
+  // project sources. Keys are rule-namespaced (e.g. "ui-renames:<scope-key>"),
+  // so two callers in the same scope share work without leaking state across
+  // unrelated rules. Values are stored as `unknown`; the caller asserts the
+  // type via the generic on `cache`.
+  private readonly genericCache = new Map<string, unknown>();
 
   constructor(readonly sources: ReadonlyMap<string, string>) {
     for (const [filePath, source] of sources) {
@@ -242,14 +268,113 @@ export class ProjectContext {
   }
 
   linkedBrsForXml(filePath: string): string | null {
-    const xmlPath = absolutePath(filePath);
+    const dir = dirname(absolutePath(filePath));
+    if (this.linkedBrsByDir.has(dir)) return this.linkedBrsByDir.get(dir)!;
     const parts: string[] = [];
-    const dir = dirname(xmlPath);
-    for (const [sourcePath, source] of this.sourceByAbs) {
-      if (!/\.(brs|bs)$/i.test(sourcePath)) continue;
-      if (dirname(sourcePath) === dir) parts.push(source);
+    for (const sourcePath of this.brsFilesInDir(dir)) {
+      const source = this.sourceByAbs.get(sourcePath);
+      if (source !== undefined) parts.push(source);
     }
-    return parts.length > 0 ? parts.join("\n") : null;
+    const value = parts.length > 0 ? parts.join("\n") : null;
+    this.linkedBrsByDir.set(dir, value);
+    return value;
+  }
+
+  /**
+   * Bucketed `m.top.<field>` usage for the component's linked BRS, keyed by
+   * lowercased field id. A field marked `write` had an assignment statement
+   * (or compound assignment); `read` covers reads and `observeField` self-
+   * observations. Returns null when the component has no linked BRS at all.
+   *
+   * Single regex sweep over the cached linked BRS replaces what was previously
+   * one full scan per <field>; see classifyUsage docstring for the rules.
+   */
+  fieldUsageForXml(filePath: string): FieldUsageMap | null {
+    const dir = dirname(absolutePath(filePath));
+    if (this.fieldUsageByDir.has(dir)) return this.fieldUsageByDir.get(dir)!;
+    const brs = this.linkedBrsForXml(filePath);
+    if (brs === null) {
+      this.fieldUsageByDir.set(dir, null);
+      return null;
+    }
+    const map: FieldUsageMap = new Map();
+    const ensure = (key: string): FieldUsage => {
+      let u = map.get(key);
+      if (!u) {
+        u = { read: false, write: false };
+        map.set(key, u);
+      }
+      return u;
+    };
+    const refRe = /\bm\.top\.([A-Za-z_]\w*)\b/g;
+    let m: RegExpExecArray | null;
+    while ((m = refRe.exec(brs)) !== null) {
+      const key = (m[1] ?? "").toLowerCase();
+      if (!key) continue;
+      const lineStart = brs.lastIndexOf("\n", m.index - 1) + 1;
+      const before = brs.slice(lineStart, m.index);
+      const atStatementStart = /^[ \t]*$/.test(before);
+      const rest = brs.slice(m.index + m[0].length).replace(/^[ \t]*/, "");
+      const usage = ensure(key);
+      if (atStatementStart && /^=(?!=)/.test(rest)) {
+        usage.write = true;
+      } else if (atStatementStart && /^[-+*/]=/.test(rest)) {
+        usage.write = true;
+        usage.read = true;
+      } else {
+        usage.read = true;
+      }
+    }
+    const obsRe = /\bobserveField(?:Scoped)?\s*\(\s*["']([^"']+)["']/gi;
+    while ((m = obsRe.exec(brs)) !== null) {
+      const id = (m[1] ?? "").toLowerCase();
+      if (id) ensure(id).read = true;
+    }
+    this.fieldUsageByDir.set(dir, map);
+    return map;
+  }
+
+  /**
+   * Memoize a deterministic computation against this ProjectContext. Used by
+   * rules whose scope-level result is the same for every file in the scope
+   * (e.g. ui-node-prefix renames, sibling-script private aliases). The caller
+   * is responsible for building a key that uniquely identifies the inputs.
+   */
+  cache<T>(key: string, build: () => T): T {
+    if (this.genericCache.has(key)) return this.genericCache.get(key) as T;
+    const value = build();
+    this.genericCache.set(key, value);
+    return value;
+  }
+
+  /**
+   * Deterministic identity for this file's component-local scope: the sorted
+   * absolute paths of every script that belongs to it. Two siblings in the
+   * same scope return the same key, so a scope-level computation only runs
+   * once per scope.
+   */
+  scopeKey(filePath: string): string {
+    const brsPath = absolutePath(filePath);
+    const paths = new Set<string>();
+    paths.add(brsPath);
+    for (const xml of this.componentsReferencingFile(brsPath)) {
+      for (const scriptPath of xml.scopeScripts) paths.add(scriptPath);
+    }
+    return [...paths].sort().join("\0");
+  }
+
+  private brsFilesInDir(dir: string): string[] {
+    if (!this.brsByDir) {
+      this.brsByDir = new Map();
+      for (const sourcePath of this.sourceByAbs.keys()) {
+        if (!/\.(brs|bs)$/i.test(sourcePath)) continue;
+        const d = dirname(sourcePath);
+        const list = this.brsByDir.get(d);
+        if (list) list.push(sourcePath);
+        else this.brsByDir.set(d, [sourcePath]);
+      }
+    }
+    return this.brsByDir.get(dir) ?? [];
   }
 
   private collectInterfaceFunctions(xml: ProjectXmlFile): Set<string> {

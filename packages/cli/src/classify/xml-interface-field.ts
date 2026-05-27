@@ -268,12 +268,20 @@ export function classifyField(input: FieldClassificationInput): FieldClass {
   const standaloneParticiple =
     words.length === 1 && STATE_PARTICIPLES.has(lastWord);
 
-  const brs =
-    projectContext?.linkedBrsForXml(filePath) ??
-    resolveLinkedBrs(filePath, componentName, projectSources);
-  const usage = brs
-    ? classifyUsage(brs, fieldId)
-    : { read: false, write: false };
+  // Fast path: the project context computes a per-component usage map once
+  // and serves O(1) lookups per field. Fall back to the legacy per-field scan
+  // only when there is no project context (e.g. stdin or single-file mode).
+  let usage: Usage = { read: false, write: false };
+  if (projectContext) {
+    const map = projectContext.fieldUsageForXml(filePath);
+    if (map) {
+      const found = map.get(fieldId.toLowerCase());
+      if (found) usage = { read: found.read, write: found.write };
+    }
+  } else {
+    const brs = resolveLinkedBrs(filePath, componentName, projectSources);
+    if (brs) usage = classifyUsage(brs, fieldId);
+  }
 
   // An event must be produced somewhere: written in a linked script, or backed
   // by an alias that forwards a child component's event.

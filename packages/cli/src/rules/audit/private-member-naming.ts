@@ -202,39 +202,108 @@ function isIndexedFunctionExportValue(
   );
 }
 
-function routineRenameEdits(
+/**
+ * Single-pass token sweep that emits both `m.<member>` renames and routine
+ * (declaration / bare call / indexed export) renames. Replaces the previous
+ * two-pass design and drops the `tokens.filter(...)` allocation that the
+ * member-only path relied on. Token-significance is tracked with a sliding
+ * 3-entry window so the previous-significant lookups stay O(1).
+ */
+function collectRenameEdits(
   ctx: BrsRuleContext,
-  renames: Map<string, string>,
+  memberRenames: Map<string, string>,
+  routineRenames: Map<string, string>,
 ): Edit[] {
-  const edits: Edit[] = observerHandlerStringEdits(ctx.source, renames);
-  const mayHaveIndexedExport = mayHaveIndexedStringKey(ctx.source);
+  const edits: Edit[] =
+    routineRenames.size > 0
+      ? observerHandlerStringEdits(ctx.source, routineRenames)
+      : [];
+  if (memberRenames.size === 0 && routineRenames.size === 0) return edits;
 
-  for (let i = 0; i < ctx.parse.tokens.length; i++) {
-    const token = ctx.parse.tokens[i]!;
-    if (token.kind !== "Identifier" || !token.location) continue;
-    const replacement = renames.get(token.text.toLowerCase());
-    if (!replacement) continue;
+  const tokens = ctx.parse.tokens;
+  const mayHaveIndexedExport =
+    routineRenames.size > 0 && mayHaveIndexedStringKey(ctx.source);
 
-    const previous = previousToken(ctx.parse.tokens, i);
-    const next = nextToken(ctx.parse.tokens, i);
-    const isDeclaration =
-      previous?.kind === "Function" || previous?.kind === "Sub";
-    const isBareCall = previous?.kind !== "Dot" && next?.kind === "LeftParen";
-    if (isBareCall && isNativeGlobalCallException(token.text)) continue;
+  // Sliding window of the last three SIGNIFICANT tokens (skipping
+  // Newline/Comment). prev1 = immediately previous significant token, etc.
+  let prev1: BscToken | undefined;
+  let prev2: BscToken | undefined;
+  let prev3: BscToken | undefined;
 
-    const isIndexedExportValue =
-      mayHaveIndexedExport &&
-      isIndexedFunctionExportValue(ctx.parse.tokens, i, replacement);
-    if (!isDeclaration && !isBareCall && !isIndexedExportValue) continue;
+  // Cached `nextSignificantIndex` walk: monotonically advances, so each token
+  // is visited at most twice across the whole loop.
+  let nextSigIdx = 0;
+  const nextSigAfter = (i: number): BscToken | undefined => {
+    if (nextSigIdx <= i) nextSigIdx = i + 1;
+    while (nextSigIdx < tokens.length) {
+      const t = tokens[nextSigIdx]!;
+      if (t.kind !== "Newline" && t.kind !== "Comment") return t;
+      nextSigIdx++;
+    }
+    return undefined;
+  };
 
-    const span = ctx.parse.lineIndex.rangeToSpan(token.location.range);
-    edits.push({
-      ruleId: RULE_ID,
-      offset: span.offset,
-      length: span.length,
-      replacement,
-    });
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i]!;
+    if (tok.kind === "Newline" || tok.kind === "Comment") continue;
+
+    if (tok.kind === "Identifier" && tok.location) {
+      const lower = tok.text.toLowerCase();
+
+      // m.<member> direct access (not foo.m.<member>).
+      if (memberRenames.size > 0) {
+        const replacement = memberRenames.get(lower);
+        if (
+          replacement &&
+          prev1?.kind === "Dot" &&
+          prev2?.kind === "Identifier" &&
+          prev2.text.toLowerCase() === "m" &&
+          prev3?.kind !== "Dot"
+        ) {
+          const span = ctx.parse.lineIndex.rangeToSpan(tok.location.range);
+          edits.push({
+            ruleId: RULE_ID,
+            offset: span.offset,
+            length: span.length,
+            replacement,
+          });
+        }
+      }
+
+      // Routine: declaration / bare call / indexed-export value.
+      if (routineRenames.size > 0) {
+        const replacement = routineRenames.get(lower);
+        if (replacement) {
+          // Advance nextSigIdx past i, then peek the next significant token.
+          nextSigIdx = i;
+          const next = nextSigAfter(i);
+          const isDeclaration =
+            prev1?.kind === "Function" || prev1?.kind === "Sub";
+          const isBareCall =
+            prev1?.kind !== "Dot" && next?.kind === "LeftParen";
+          if (!(isBareCall && isNativeGlobalCallException(tok.text))) {
+            const isIndexedExportValue =
+              mayHaveIndexedExport &&
+              isIndexedFunctionExportValue(tokens, i, replacement);
+            if (isDeclaration || isBareCall || isIndexedExportValue) {
+              const span = ctx.parse.lineIndex.rangeToSpan(tok.location.range);
+              edits.push({
+                ruleId: RULE_ID,
+                offset: span.offset,
+                length: span.length,
+                replacement,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    prev3 = prev2;
+    prev2 = prev1;
+    prev1 = tok;
   }
+
   return edits;
 }
 
@@ -412,36 +481,6 @@ function memberNamingDiagnostics(
   return diagnostics;
 }
 
-function memberRenameEdits(
-  ctx: BrsRuleContext,
-  renames: Map<string, string>,
-): Edit[] {
-  if (renames.size === 0) return [];
-
-  const sig = ctx.parse.tokens.filter(
-    (t) => t.kind !== "Newline" && t.kind !== "Comment",
-  );
-  const edits: Edit[] = [];
-  for (let i = 0; i < sig.length; i++) {
-    const tok = sig[i]!;
-    if (tok.kind !== "Identifier" || !tok.location) continue;
-    const replacement = renames.get(tok.text.toLowerCase());
-    if (!replacement) continue;
-    if (sig[i - 1]?.kind !== "Dot") continue;
-    const obj = sig[i - 2];
-    if (!(obj?.kind === "Identifier" && obj.text.toLowerCase() === "m")) continue;
-    if (sig[i - 3]?.kind === "Dot") continue;
-    const span = ctx.parse.lineIndex.rangeToSpan(tok.location.range);
-    edits.push({
-      ruleId: RULE_ID,
-      offset: span.offset,
-      length: span.length,
-      replacement,
-    });
-  }
-  return edits;
-}
-
 /**
  * Private `m` members should be lowerCamelCase (optionally `_`-prefixed), or
  * `_`-prefixed ALL_CAPS constants. Flags `m.<name>` assignments where the
@@ -469,14 +508,13 @@ export const privateMemberNaming: BrsRule = {
       memberRenames.renames,
       memberRenames.collisions,
     );
-    const memberEdits = memberRenameEdits(ctx, memberRenames.renames);
-
     const interfaceInfo = ctx.projectContext?.publicInterfaceInfo(ctx.filePath) ?? null;
     if (!interfaceInfo) {
-      if (diagnostics.length === 0 && memberEdits.length === 0) {
+      const memberOnly = collectRenameEdits(ctx, memberRenames.renames, new Map());
+      if (diagnostics.length === 0 && memberOnly.length === 0) {
         return emptyResult();
       }
-      return { edits: memberEdits, diagnostics };
+      return { edits: memberOnly, diagnostics };
     }
     const { publicNames } = interfaceInfo;
 
@@ -531,29 +569,37 @@ export const privateMemberNaming: BrsRule = {
     // A routine declared in a sibling component-local script can be *called*
     // from this file. When that sibling routine is privatized (in its own run),
     // the call sites here must be rewritten too, or the program breaks. Mirror
-    // each sibling's rename decision onto this file's call sites by computing the
-    // same map the sibling would, from the shared project snapshot.
+    // each sibling's rename decision onto this file's call sites by computing
+    // the same map the sibling would, from the shared project snapshot. Cache
+    // per-sibling so two scope-mates don't both recompute the same sibling's
+    // rename plan.
     const scopeRenames = new Map(renames);
+    const publicNamesKey = [...publicNames].sort().join(",");
     for (const [scriptPath] of interfaceInfo.scopeSources) {
-      const parsed = ctx.projectContext?.getBrsParse(scriptPath);
-      if (!parsed || parsed.fatal) continue;
-      for (const [from, to] of computePrivateAliasRenames(
-        parsed.topLevelFunctions,
-        publicNames,
-      )) {
-        if (!scopeRenames.has(from)) scopeRenames.set(from, to);
-      }
-      for (const [from, to] of computeRenamesForRoutines(
-        parsed.topLevelFunctions,
-        publicNames,
-      )) {
+      const sibling = ctx.projectContext?.cache<Map<string, string> | null>(
+        `priv-rename-sibling:${scriptPath}|${publicNamesKey}`,
+        () => {
+          const parsed = ctx.projectContext?.getBrsParse(scriptPath);
+          if (!parsed || parsed.fatal) return null;
+          const merged = new Map<string, string>(
+            computePrivateAliasRenames(parsed.topLevelFunctions, publicNames),
+          );
+          for (const [from, to] of computeRenamesForRoutines(
+            parsed.topLevelFunctions,
+            publicNames,
+          )) {
+            if (!merged.has(from)) merged.set(from, to);
+          }
+          return merged;
+        },
+      );
+      if (!sibling) continue;
+      for (const [from, to] of sibling) {
         if (!scopeRenames.has(from)) scopeRenames.set(from, to);
       }
     }
 
-    const routineEdits =
-      scopeRenames.size > 0 ? routineRenameEdits(ctx, scopeRenames) : [];
-    const edits = [...memberEdits, ...routineEdits];
+    const edits = collectRenameEdits(ctx, memberRenames.renames, scopeRenames);
     if (diagnostics.length === 0 && edits.length === 0) return emptyResult();
     return { edits, diagnostics };
   },
