@@ -21,6 +21,10 @@ are relative to `packages/cli/` unless noted.
   change (method below), never assumed.
 - `npm test` and `npm run typecheck` stay green.
 - Wins are compared as *ratios* via an A/B `git stash`, not absolute ms.
+- Rule changes include a **pre/post benchmark comparison** against the base
+  revision. If either workload slows materially, investigate the regression and
+  try to get back to parity before shipping. Do not treat "benchmark still runs"
+  as enough signal.
 
 ## What shipped (~1.7x on the real corpus)
 
@@ -70,6 +74,20 @@ project-aware ~4.4ms/request, cold CLI stdin ~492ms/request.
 
 Harnesses: `scripts/bench.ts`, `scripts/bench-editor.ts`. Running log:
 `bench/README.md`.
+
+**Pre/post comparison for rule work:** run both benchmark workloads on the base
+revision and on the changed tree, using the same machine state as much as
+possible.
+
+1. Record baseline numbers from the base revision: `npm run bench` and
+   `npm run bench:editor`.
+2. Record changed-tree numbers with the same commands.
+3. Compare at least total/format/rules for `bench`, and warm single-file, warm
+   project-aware, and cold CLI for `bench:editor`.
+4. If the changed tree is materially slower, profile or inspect the hot rule
+   path and optimize it before accepting the change. Single-run numbers are
+   noisy, so rerun when the result is borderline, but do not ignore a consistent
+   slowdown.
 
 **Byte-identical verification (run for every change):** a throwaway tsx script
 loads the real corpus, runs `formatFile` over every file, and prints a sha256 of

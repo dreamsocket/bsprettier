@@ -1087,6 +1087,71 @@ describe("runner safety", () => {
     expect(result.output).toContain("sub _helper()");
   });
 
+  it("renames indexed m function exports when component routines become private", () => {
+    const xmlPath = "components/BFFDecoder.xml";
+    const brsPath = "components/BFFDecoder.brs";
+    const xml =
+      '<component name="BFFDecoder" extends="Group">\n' +
+      '  <script type="text/brightscript" uri="BFFDecoder.brs" />\n' +
+      "  <interface>\n" +
+      '    <function name="convertObject" />\n' +
+      "  </interface>\n" +
+      "</component>\n";
+    const brs =
+      "sub init()\n" +
+      '    m["createComponent"] = createComponent\n' +
+      "end sub\n\n" +
+      "function convertObject(value as Object) as Dynamic\n" +
+      "    return value\n" +
+      "end function\n\n" +
+      "function createComponent(value as Object) as Object\n" +
+      "    return value\n" +
+      "end function\n";
+    const result = formatFile({
+      filePath: brsPath,
+      source: brs,
+      config,
+      projectSources: new Map([
+        [xmlPath, xml],
+        [brsPath, brs],
+      ]),
+      onlyRules: new Set(["audit/private-member-naming"]),
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.output).toContain(
+      '    m["_createComponent"] = _createComponent',
+    );
+    expect(result.output).toContain("function _createComponent(");
+
+    const partial =
+      "sub init()\n" +
+      '    m["createComponent"] = createComponent\n' +
+      "end sub\n\n" +
+      "function convertObject(value as Object) as Dynamic\n" +
+      "    return value\n" +
+      "end function\n\n" +
+      "function _createComponent(value as Object) as Object\n" +
+      "    return value\n" +
+      "end function\n";
+    const repaired = formatFile({
+      filePath: brsPath,
+      source: partial,
+      config,
+      projectSources: new Map([
+        [xmlPath, xml],
+        [brsPath, partial],
+      ]),
+      onlyRules: new Set(["audit/private-member-naming"]),
+    });
+
+    expect(repaired.diagnostics).toEqual([]);
+    expect(repaired.output).toContain(
+      '    m["_createComponent"] = _createComponent',
+    );
+    expect(repaired.output).toContain("function _createComponent(");
+  });
+
   it("privatizes same-directory linked script routines but keeps namespaced utilities public", () => {
     const xmlPath = "components/Widget.xml";
     const brsPath = "components/WidgetHelpers.brs";
