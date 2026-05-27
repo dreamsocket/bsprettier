@@ -115,12 +115,16 @@ function computeUiRenames(
     for (const m of scan(src, FINDNODE_ASSIGN_RE)) {
       const member = m.groups[0] ?? "";
       const receiver = m.groups[1] ?? "";
-      if (isSceneFindNodeReceiver(receiver)) continue;
-      if (sceneVars.has(receiver.replace(/\s+/g, "").toLowerCase())) continue;
+      const sceneReceiver =
+        isSceneFindNodeReceiver(receiver) ||
+        sceneVars.has(receiver.replace(/\s+/g, "").toLowerCase());
 
       const id = literalFindNodeId(m.groups[2] ?? "");
       let target: string;
-      if (id && animationIds.has(id)) {
+      if (sceneReceiver || (id && animationIds.has(id))) {
+        // Scene-borrowed handles get a private `_` prefix without the `_ui`
+        // category — we deliberately don't consult the scene XML to decide
+        // whether the node is UI, Animation, or something else.
         if (/^_/.test(member)) continue; // already private
         target = privatePrefix(member);
       } else {
@@ -177,13 +181,14 @@ function memberRenameEdits(
 
 /**
  * UI node references obtained via `findNode` should be stored on members named
- * `m._ui*`, except for scripts linked from components that extend `Scene` and
- * scene-level `findNode`
- * calls. Scene-level receivers include the literal scene object
- * (`scene`, `m.scene`, `m.top.getScene()`) and any local variable assigned from
- * `getScene()` (e.g. `_scene = m.top.getScene()` then `_scene.findNode(...)`).
- * Animation and Interpolator nodes are exempt from the `_ui` constraint but must
- * still use a private `_` prefix.
+ * `m._ui*`, except for scripts linked from components that extend `Scene` (which
+ * the rule skips entirely). Handles pulled from a scene-level receiver
+ * (`scene`, `m.scene`, `m.top.getScene()`, or any local variable assigned from
+ * `getScene()` — e.g. `_scene = m.top.getScene()` then `_scene.findNode(...)`)
+ * get a private `_` prefix instead of `_ui`, because the handle is borrowed
+ * from outside this component but we don't try to categorize it as UI vs
+ * Animation vs custom by consulting the scene's XML. Animation and Interpolator
+ * nodes referenced via `m.top.findNode` follow the same `_`-prefix rule.
  *
  * The rule auto-fixes by renaming the member (`m.tileGroup` → `m._uiTileGroup`,
  * `m.fadeAnimation` → `m._fadeAnimation`) across the whole component scope, so a
