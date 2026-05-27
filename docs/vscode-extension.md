@@ -133,10 +133,13 @@ narrower than a language server: no diagnostics, completions, deploy, or debug.
 
 The extension host is long-lived, so the risks are stale config, stale source
 snapshots, and stale project context. Mitigations as built: fresh config per
-request, source-change tracking for open/saved/deleted files, conservative
+request, saved-file tracking for created/changed/deleted files, conservative
 `ProjectContext` rebuilds (no fine-grained incremental invalidation), and a
-single-file fallback when the project service is uncertain. Parse/conflict
-results leave the document unchanged and surface a message rather than throwing.
+single-file fallback when the project service is uncertain. Format requests
+overlay the current document's in-editor text at format time, but the extension
+does not maintain project context on every keystroke; unsaved sibling documents
+are outside the formatter input until they are saved. Parse/conflict results
+leave the document unchanged and surface a message rather than throwing.
 
 ## Related
 

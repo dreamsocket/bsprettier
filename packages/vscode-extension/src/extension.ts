@@ -175,14 +175,6 @@ function serviceFor(
     watcher.onDidDelete((uri) => service.removeDocument(uri.fsPath)),
     watcher.onDidChange((uri) => refreshDocumentSource(service, uri)),
     watcher.onDidCreate((uri) => refreshDocumentSource(service, uri)),
-    vscode.workspace.onDidChangeTextDocument((event) => {
-      if (event.document.uri.scheme !== "file") return;
-      if (!supportedLanguages.has(event.document.languageId)) return;
-      service.updateDocument({
-        filePath: event.document.uri.fsPath,
-        source: event.document.getText(),
-      });
-    }),
   );
 
   const entry = { service, disposables };
