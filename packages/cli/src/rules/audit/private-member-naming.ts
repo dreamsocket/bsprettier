@@ -13,6 +13,12 @@ function isFrameworkRoutine(name: string): boolean {
   return lower === "init" || lower === "onkeyevent";
 }
 
+const NATIVE_GLOBAL_CALL_EXCEPTIONS = new Set(["parsejson"]);
+
+function isNativeGlobalCallException(name: string): boolean {
+  return NATIVE_GLOBAL_CALL_EXCEPTIONS.has(name.toLowerCase());
+}
+
 /**
  * Namespaced global helpers follow the `Namespace_method` convention
  * (`StringUtil_trim`, `HTTPUtil_addQueryParams`, `DeviceUtil_getId`). Any
@@ -236,6 +242,8 @@ function routineRenameEdits(
     const isDeclaration =
       previous?.kind === "Function" || previous?.kind === "Sub";
     const isBareCall = previous?.kind !== "Dot" && next?.kind === "LeftParen";
+    if (isBareCall && isNativeGlobalCallException(token.text)) continue;
+
     const isIndexedExportValue =
       mayHaveIndexedExport &&
       isIndexedFunctionExportValue(ctx.parse.tokens, i, replacement);

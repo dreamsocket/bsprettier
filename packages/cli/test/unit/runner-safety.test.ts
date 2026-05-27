@@ -1272,6 +1272,40 @@ describe("runner safety", () => {
     expect(result.output).not.toContain("_HTTPRequest()");
   });
 
+  it("does not rewrite native parseJSON calls to private alias routines", () => {
+    const xmlPath = "components/JSONDecoder.xml";
+    const brsPath = "components/JSONDecoder.brs";
+    const xml =
+      '<component name="JSONDecoder" extends="Group">\n' +
+      '  <script type="text/brightscript" uri="JSONDecoder.brs" />\n' +
+      "  <interface>\n" +
+      '    <function name="decode" />\n' +
+      "  </interface>\n" +
+      "</component>\n";
+    const brs =
+      "function decode(value as String) as Object\n" +
+      "    return parseJSON(value)\n" +
+      "end function\n\n" +
+      "function _parseJSON(value as Object) as Object\n" +
+      "    return value\n" +
+      "end function\n";
+    const result = formatFile({
+      filePath: brsPath,
+      source: brs,
+      config,
+      projectSources: new Map([
+        [xmlPath, xml],
+        [brsPath, brs],
+      ]),
+      onlyRules: new Set(["audit/private-member-naming"]),
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.output).toContain("    return parseJSON(value)");
+    expect(result.output).toContain("function _parseJSON(");
+    expect(result.output).not.toContain("return _parseJSON(value)");
+  });
+
   it("does not enforce private prefixes for same-named utilities linked from another component", () => {
     const xmlPath = "/project/components/screens/DeviceUtil.xml";
     const brsPath = "/project/components/dreamsocket/utils/DeviceUtil.brs";
