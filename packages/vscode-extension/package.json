@@ -2,7 +2,7 @@
   "name": "bsprettier-vscode",
   "displayName": "bsprettier",
   "description": "Opinionated BrightScript, BrighterScript, and SceneGraph XML formatter",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "license": "MIT",
   "type": "module",

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/dreamsocket/bsprettier/compare/vscode-v0.2.1...vscode-v0.3.0) (2026-05-27)
+
+
+### Features
+
+* **cli:** expose root package entrypoints ([#8](https://github.com/dreamsocket/bsprettier/issues/8)) ([21d7bb0](https://github.com/dreamsocket/bsprettier/commit/21d7bb0dd6bad66d2b9b486a33a1e5068c9df2e9))
+
+
+### Bug Fixes
+
+* **vscode:** avoid live project context rebuilds ([#20](https://github.com/dreamsocket/bsprettier/issues/20)) ([97b16dc](https://github.com/dreamsocket/bsprettier/commit/97b16dcdac70b3e027a966fac11c81457ef49cf6))
+
 ## [0.2.1](https://github.com/dreamsocket/bsprettier/compare/vscode-v0.2.0...vscode-v0.2.1) (2026-05-26)
 
 
