@@ -64,7 +64,9 @@ The extension uses the same shared config file as the CLI. Put project config in
 
 See the
 [configuration reference](https://github.com/dreamsocket/bsprettier/blob/main/docs/configuration.md)
-for discovery rules, severity behavior, formatter options, and schema details.
+for discovery rules, severity behavior, formatter options, and schema details. For
+the full rule list and convention behavior, see the
+[code conventions reference](https://github.com/dreamsocket/bsprettier/blob/main/docs/code-conventions.md).
 
 ### Modes
 
